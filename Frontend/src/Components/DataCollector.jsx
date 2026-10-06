@@ -19,7 +19,7 @@ const DataCollector = () => {
 
         try {
             const Response = await axios.post(
-                "http://127.0.0.1:8000/Upload", formData
+                "http://127.0.0.1:8000/Upload/", formData
             )
 
                 console.log(Response.data)
@@ -27,8 +27,12 @@ const DataCollector = () => {
         }
         catch(error) {
             console.error("Upload error:", error)
-            alert("Could not connect to backend")
-        }
+if (error.response) {
+                console.error("Backend error:", error.response.data);
+            }
+
+            alert("Could not upload CSV file");
+                }
 
 
     }
@@ -46,7 +50,7 @@ const DataCollector = () => {
                      file:cursor-pointer
                      scale-90
                      hover:file:bg-gray-800"/>
-        <button className='text-white text-lg bg-black rounded-lg p-2'  onClick={console.log("clicked")} type="submit">Submit</button>
+        <button className='text-white text-lg bg-black rounded-lg p-2' type="submit">Submit</button>
        </div>
        </form>
     </div>
