@@ -1,9 +1,10 @@
 import React from 'react'
+import InterfacePage from './Pages/InterfacePage'
 
 const App = () => {
   return (
-    <div className="bg-black text-white">
-      AnalyzerX
+    <div className=" h-screen">
+      <InterfacePage/>
     </div>
   )
 }
