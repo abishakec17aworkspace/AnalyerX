@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,UploadFile,File
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -26,4 +26,11 @@ def home():
 def health():
     return {
         "message : health func() " 
+    }
+
+@app.post("/")
+async def upload_dataset(dataset: UploadFile = File(...)):
+    return {
+        "message": "CSV uploaded successfully",
+        "filename": dataset.filename
     }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import axios from "axios"
 
 const DataCollector = () => {
     const [file,setFile] = useState(null)
@@ -6,32 +7,22 @@ const DataCollector = () => {
          setFile(event.target.files[0])
     }
 
-    const HandleSubmit = async() =>{
+    const HandleSubmit = async(event) =>{
+        event.preventDefault() 
         if(!file){
             alert("Upload File....")
             return
         }
-        const FormData = new FormData()
-        FormData.append("dataset",file)
+        const formData = new FormData()
+        formData.append("dataset",file)
 
         try {
-            const Response = await fetch(
-                "",{
-                    method:"POST",
-                    body:FormData
-                }
+            const Response = await axios.post(
+                "http://127.0.0.1:8000/", formData
             )
 
-            const data = await Response.json()
-            
-            if(Response.ok){
-                console.log(data)
-                console.log("csv file uploaded sucessfully...")
-                return
-            }else{
-                alert(data.message || "upload Failed")
-            }
-            
+                console.log(Response.data)
+                console.log("csv file uploaded sucessfully...")            
         }
         catch(error) {
             console.error("Upload error:", error)
@@ -42,6 +33,7 @@ const DataCollector = () => {
     }
   return (
         <div>
+        <form   onSubmit={HandleSubmit}>
        <div className='bg-white w-fit h-fit  p-4 gap-y-2 flex flex-col justify-center align-middle items-center rounded-md'>
         <h1 className='text-gray-900 font-light text-4xl'>Upload the CSV Dataset</h1>
         <input  type="file"   
@@ -53,8 +45,9 @@ const DataCollector = () => {
                      file:cursor-pointer
                      scale-90
                      hover:file:bg-gray-800"/>
-                     <button className='text-white text-lg bg-black rounded-lg p-2' onSubmit={HandleSubmit} type="submit">Submit</button>
+        <button className='text-white text-lg bg-black rounded-lg p-2'  onClick={console.log("clicked")} type="submit">Submit</button>
        </div>
+       </form>
     </div>
   )
 }
