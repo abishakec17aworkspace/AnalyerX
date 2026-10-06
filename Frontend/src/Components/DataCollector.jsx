@@ -4,6 +4,7 @@ import axios from "axios"
 const DataCollector = () => {
     const [file,setFile] = useState(null)
     const Handlefile=(event)=>{
+        event.preventDefault()
          setFile(event.target.files[0])
     }
 
@@ -18,7 +19,7 @@ const DataCollector = () => {
 
         try {
             const Response = await axios.post(
-                "http://127.0.0.1:8000/", formData
+                "http://127.0.0.1:8000/Upload", formData
             )
 
                 console.log(Response.data)

@@ -1,5 +1,6 @@
 from fastapi import FastAPI,UploadFile,File
 from fastapi.middleware.cors import CORSMiddleware
+from routes.Upload import router as uploader_route
 
 app = FastAPI(
     # title="Gaming Analytics API",
@@ -28,9 +29,11 @@ def health():
         "message : health func() " 
     }
 
-@app.post("/")
-async def upload_dataset(dataset: UploadFile = File(...)):
-    return {
-        "message": "CSV uploaded successfully",
-        "filename": dataset.filename
-    }
+# @app.post("/")
+# async def upload_dataset(dataset: UploadFile = File(...)):
+#     return {
+#         "message": "CSV uploaded successfully",
+#         "filename": dataset.filename
+#     }
+
+app.include_router(uploader_route)
