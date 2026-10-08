@@ -6,7 +6,7 @@ import DataCollector from '../Components/DataCollector'
 const InterfacePage = () => {
   return (
     <div
-      className="relative h-screen bg-cover bg-center"
+      className="relative h-fit bg-cover bg-center"
       style={{ backgroundImage: `url(${mariola})` }}
     >
       <div className="absolute inset-0 bg-black/60"></div>

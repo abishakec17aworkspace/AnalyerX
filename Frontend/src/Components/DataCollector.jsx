@@ -1,8 +1,14 @@
 import React, { useState } from 'react'
 import axios from "axios"
+import DatasetOverview from './DatasetOverview'
+import { useNavigate } from 'react-router-dom'
 
 const DataCollector = () => {
     const [file,setFile] = useState(null)
+    const [datasetOverview,setDatasetoverview] = useState(null)
+    const [loading,setLoading] = useState(false)
+    const navi = useNavigate();
+
     const Handlefile=(event)=>{
         event.preventDefault()
          setFile(event.target.files[0])
@@ -18,12 +24,16 @@ const DataCollector = () => {
         formData.append("dataset",file)
 
         try {
+            setLoading(true)
             const Response = await axios.post(
                 "http://127.0.0.1:8000/Upload/", formData
             )
 
                 console.log(Response.data)
-                console.log("csv file uploaded sucessfully...")            
+                console.log("csv file uploaded sucessfully...")   
+                
+                // setDatasetoverview(Response.data)
+                navi("/Dashboard",{state:{data:Response.data}})
         }
         catch(error) {
             console.error("Upload error:", error)
@@ -32,6 +42,8 @@ if (error.response) {
             }
 
             alert("Could not upload CSV file");
+                }finally{
+                    setLoading(false)
                 }
 
 
@@ -50,9 +62,10 @@ if (error.response) {
                      file:cursor-pointer
                      scale-90
                      hover:file:bg-gray-800"/>
-        <button className='text-white text-lg bg-black rounded-lg p-2' type="submit">Submit</button>
+        <button className='text-white text-lg bg-black rounded-lg p-2' disabled={loading} type="submit">Submit</button>
        </div>
        </form>
+       {/* {datasetOverview && <DatasetOverview data={datasetOverview}/>} */}
     </div>
   )
 }

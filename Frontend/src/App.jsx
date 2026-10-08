@@ -1,12 +1,18 @@
-import React from 'react'
-import InterfacePage from './Pages/InterfacePage'
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+import InterfacePage from "./Pages/InterfacePage";
+import DatasetOverview from "./Components/DatasetOverview";
 
 const App = () => {
   return (
-    <div className=" h-screen">
-      <InterfacePage/>
-    </div>
-  )
-}
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<InterfacePage />} />
+        <Route path="/Dashboard" element={<DatasetOverview />} />
+      </Routes>
+    </BrowserRouter>
+  );
+};
 
-export default App
+export default App;
