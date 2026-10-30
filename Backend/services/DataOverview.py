@@ -170,6 +170,12 @@ def Data_Overview_Output(df: pd.DataFrame):
 
     describe_data = describe_df.to_dict()
 
+    #complete data
+
+    complete_data = df.astype(object).where(
+    pd.notna(df), None
+    ).to_dict(orient="records")
+
 
     # ==========================================
     # 13. FINAL RESPONSE
@@ -285,6 +291,8 @@ def Data_Overview_Output(df: pd.DataFrame):
         # --------------------------------------
 
         "Preview":
-            preview
+            preview,
+            
+        "complete_data":complete_data   
 
     }

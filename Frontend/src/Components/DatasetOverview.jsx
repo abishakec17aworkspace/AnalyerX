@@ -1,11 +1,17 @@
 import React from "react";
 import { useLocation } from "react-router-dom";
+import mariola from "../assets/Whity.jpg"
 
 const DatasetOverview = () => {
   const location = useLocation();
 
   // Get backend response from React Router state
-  const data = location.state?.data;
+  const routerdata = location.state?.data;
+
+  //Stroed data
+  const storeddata = sessionStorage.getItem("uploadeddata")
+
+  const data = routerdata || (storeddata ? JSON.parse(storeddata) : null)
 
   // Handle direct access to /Dashboard
   if (!data) {
@@ -61,14 +67,15 @@ const DatasetOverview = () => {
   const columns = overview.column_information || [];
 
   return (
-    <div className="space-y-6 w-screen px-6">
-
+    <div className="space-y-6 w-screen px-24 -mt-6 -ml-10 bg-contain"
+    style={{ backgroundImage: `url(${mariola})` }}>
+   <div className="absolute inset-0 bg-black/15 z-10 "></div>
       {/* ================================
           DATASET HEADER
       ================================ */}
 
       <div>
-        <h2 className="text-2xl font-bold text-gray-800">
+        <h2 className="text-2xl pt-6 font-light text-white">
           Dataset Overview
         </h2>
 
@@ -311,7 +318,7 @@ const DatasetOverview = () => {
 
         <div className="overflow-x-auto">
 
-          <table className="w-full text-left">
+          <table className="w-full text-left ">
 
             <thead>
 
