@@ -4,7 +4,7 @@ import pandas as pd
 datasets:dict[str,pd.DataFrame]={}
 
 def store_dataset(df:pd.DataFrame)->str:
-    dataset_id = str(uuid4)
+    dataset_id = str(uuid4())
 
     datasets[dataset_id]=df.copy(deep=True)
     return dataset_id

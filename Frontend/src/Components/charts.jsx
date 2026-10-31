@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 
 import {
     ResponsiveContainer,
@@ -13,59 +13,499 @@ import {
     PieChart,
     Pie,
     Cell,
-    LineChart,
-    Line
-} from 'recharts';
+    ScatterChart,
+    Scatter
+} from "recharts";
 
+import mariola from "../assets/CyberGirl.jpg";
 
 import {
-    ChartNoAxesColumn,
     Database,
+    ChartNoAxesColumn,
     Activity,
     ChartPie,
-    AlertCircle
-} from 'lucide-react';
+    AlertCircle,
+    BarChart3,
+    RefreshCw
+} from "lucide-react";
 
 
-// Chart colors
+// =====================================================
+// 1. CONSTANTS
+// =====================================================
+
 const COLORS = [
-    '#6366f1',
-    '#8b5cf6',
-    '#06b6d4',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#ec4899',
-    '#14b8a6'
+    "#6366f1",
+    "#8b5cf6",
+    "#06b6d4",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#ec4899",
+    "#14b8a6"
 ];
 
+const TOOLTIP_STYLE = {
+    background: "#111111",
+    border: "1px solid #292929",
+    borderRadius: "8px",
+    color: "#ffffff"
+};
+
+const GRID_STYLE = {
+    stroke: "#292929",
+    strokeDasharray: "3 3"
+};
+
+const AXIS_STYLE = {
+    stroke: "white",
+    fontSize:16
+};
+
+
+// =====================================================
+// 2. HELPER FUNCTIONS
+// =====================================================
+
+// Convert values to valid numbers.
+
+const toNumber = (value) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number) ? number : null;
+};
+
+
+// Extract numerical values from a column.
+
+const getNumericValues = (rows, column) => {
+    return rows
+        .map((row) => toNumber(row[column]))
+        .filter((value) => value !== null);
+};
+
+
+// Create histogram bins.
+
+const createHistogram = (values, binCount = 10) => {
+    if (!values.length) return [];
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    if (min === max) {
+        return [
+            {
+                range: String(min),
+                count: values.length
+            }
+        ];
+    }
+
+    const binSize = (max - min) / binCount;
+
+    const bins = Array.from(
+        { length: binCount },
+        (_, index) => {
+            const start = min + index * binSize;
+
+            const end =
+                index === binCount - 1
+                    ? max
+                    : start + binSize;
+
+            return {
+                range: `${start.toFixed(1)} - ${end.toFixed(1)}`,
+                count: 0
+            };
+        }
+    );
+
+    values.forEach((value) => {
+        let index = Math.floor(
+            (value - min) / binSize
+        );
+
+        index = Math.min(index, binCount - 1);
+
+        bins[index].count += 1;
+    });
+
+    return bins;
+};
+
+
+// Get the most frequent categorical values.
+
+const getCategoryCounts = (rows, column) => {
+    const counts = {};
+
+    rows.forEach((row) => {
+        const value = row[column];
+
+        if (
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== ""
+        ) {
+            const key = String(value);
+
+            counts[key] = (counts[key] || 0) + 1;
+        }
+    });
+
+    return Object.entries(counts)
+        .map(([name, count]) => ({
+            name,
+            count
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+};
+
+
+// Calculate Pearson correlation.
+
+const getCorrelation = (rows, columnA, columnB) => {
+    const pairs = rows
+        .map((row) => ({
+            x: toNumber(row[columnA]),
+            y: toNumber(row[columnB])
+        }))
+        .filter(
+            (pair) =>
+                pair.x !== null &&
+                pair.y !== null
+        );
+
+    if (pairs.length < 2) return null;
+
+    const meanX =
+        pairs.reduce(
+            (sum, pair) => sum + pair.x,
+            0
+        ) / pairs.length;
+
+    const meanY =
+        pairs.reduce(
+            (sum, pair) => sum + pair.y,
+            0
+        ) / pairs.length;
+
+    const numerator = pairs.reduce(
+        (sum, pair) =>
+            sum +
+            (pair.x - meanX) *
+            (pair.y - meanY),
+        0
+    );
+
+    const denominatorX = Math.sqrt(
+        pairs.reduce(
+            (sum, pair) =>
+                sum + (pair.x - meanX) ** 2,
+            0
+        )
+    );
+
+    const denominatorY = Math.sqrt(
+        pairs.reduce(
+            (sum, pair) =>
+                sum + (pair.y - meanY) ** 2,
+            0
+        )
+    );
+
+    if (
+        denominatorX === 0 ||
+        denominatorY === 0
+    ) {
+        return null;
+    }
+
+    return numerator / (
+        denominatorX * denominatorY
+    );
+};
+
+
+// Calculate quartiles and outliers.
+
+const getBoxStatistics = (values) => {
+    if (!values.length) return null;
+
+    const sorted = [...values].sort(
+        (a, b) => a - b
+    );
+
+    const percentile = (arr, p) => {
+        const index = (arr.length - 1) * p;
+
+        const lower = Math.floor(index);
+        const upper = Math.ceil(index);
+
+        if (lower === upper) {
+            return arr[lower];
+        }
+
+        return (
+            arr[lower] +
+            (arr[upper] - arr[lower]) *
+            (index - lower)
+        );
+    };
+
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+
+    const q1 = percentile(sorted, 0.25);
+    const median = percentile(sorted, 0.50);
+    const q3 = percentile(sorted, 0.75);
+
+    const iqr = q3 - q1;
+
+    const lowerFence = q1 - 1.5 * iqr;
+    const upperFence = q3 + 1.5 * iqr;
+
+    const outliers = sorted.filter(
+        (value) =>
+            value < lowerFence ||
+            value > upperFence
+    );
+
+    return {
+        min,
+        q1,
+        median,
+        q3,
+        max,
+        iqr,
+        outliers,
+        outlierCount: outliers.length
+    };
+};
+
+
+// =====================================================
+// 3. REUSABLE UI COMPONENTS
+// =====================================================
+
+
+// SUMMARY CARD
+
+const SummaryCard = ({
+    title,
+    value,
+    icon,
+    color,
+    description
+}) => {
+    const Icon = icon;
+
+    return (
+        <div
+            className="
+                rounded-xl
+                border border-[#252525]
+                bg-[#0b0b0b18]
+                backdrop-blur-lg
+                p-5
+                transition
+                hover:border-gray-600
+            "
+        >
+
+            <div className="flex justify-between items-center">
+
+                <p className="text-sm text-gray-950">
+                    {title}
+                </p>
+
+                <div className={`rounded-lg p-2 bg-black/70`}>
+                    <Icon size={20} />
+                </div>
+
+            </div>
+
+            <h2 className="mt-4 text-3xl font-bold text-black">
+                {value}
+            </h2>
+
+            <p className="mt-2 text-xs text-gray-950">
+                {description}
+            </p>
+
+        </div>
+    );
+};
+
+
+// CHART CARD
+
+const ChartCard = ({
+    title,
+    description,
+    children,
+    className = ""
+}) => {
+    return (
+        <div
+            className={`
+                min-w-0
+                rounded-xl
+                border border-[#252525]
+                bg-[#0b0b0b81]
+                backdrop-blur-lg
+                p-5 md:p-6
+                transition
+                hover:border-gray-600
+                ${className}
+            `}
+        >
+
+            <h2 className="text-lg md:text-xl font-semibold text-white  p-2 rounded-lg w-fit">
+                {title}
+            </h2>
+
+            <p className="mt-2 mb-6 pl-2 text-sm text-slate-300">
+                {description}
+            </p>
+
+            {children}
+
+        </div>
+    );
+};
+
+
+// SELECT FIELD
+
+const SelectField = ({
+    label,
+    value,
+    onChange,
+    options
+}) => {
+    return (
+        <div className="flex flex-col gap-2">
+
+            <label className="text-sm text-black">
+                {label}
+            </label>
+
+            <select
+                value={value}
+                onChange={(event) =>
+                    onChange(event.target.value)
+                }
+                className="
+                    w-full md:w-64
+                    rounded-lg
+                    border border-[#292929]
+                    bg-[#111111]
+                    px-4 py-3
+                    text-sm text-gray-300
+                    outline-none
+                    transition
+                    focus:border-gray-500
+                "
+            >
+
+                {options.map((option) => (
+                    <option
+                        key={option}
+                        value={option}
+                    >
+                        {option}
+                    </option>
+                ))}
+
+            </select>
+
+        </div>
+    );
+};
+
+
+// EMPTY CHART
+
+const EmptyChart = ({ message }) => {
+    return (
+        <div
+            className="
+                h-72
+                flex flex-col
+                items-center justify-center
+                text-gray-500
+            "
+        >
+
+            <ChartNoAxesColumn
+                size={35}
+                className="mb-3 opacity-50"
+            />
+
+            <p className="text-sm">
+                {message}
+            </p>
+
+        </div>
+    );
+};
+
+
+// =====================================================
+// 4. MAIN CHARTS COMPONENT
+// =====================================================
 
 const Charts = () => {
 
-    // =====================================
-    // 1. GET STORED DATASET
-    // =====================================
+    // -------------------------------------
+    // GET STORED DATASET
+    // -------------------------------------
 
-   const data = (() => {
-    try {
-        const storedData = sessionStorage.getItem("uploadeddata");
+    const data = useMemo(() => {
+        try {
+            const storedData =
+                sessionStorage.getItem("uploadeddata");
 
-        return storedData ? JSON.parse(storedData) : null;
+            return storedData
+                ? JSON.parse(storedData)
+                : null;
 
-    } catch (error) {
-        console.error("Dataset retrieval error:", error);
-        return null;
-    }
-})();
+        } catch (error) {
+            console.error(
+                "Dataset retrieval error:",
+                error
+            );
+
+            return null;
+        }
+    }, []);
 
     const overview = data?.overview;
 
 
-    // =====================================
-    // 2. EXTRACT DATASET INFORMATION
-    // =====================================
+    // -------------------------------------
+    // EXTRACT DATASET INFORMATION
+    // -------------------------------------
 
-    const datasetSize = overview?.dataset_size || {};
+    const rows = Array.isArray(
+        overview?.complete_data
+    )
+        ? overview.complete_data
+        : [];
+
+    const datasetSize =
+        overview?.dataset_size || {};
 
     const missingValues =
         overview?.missing_values || {};
@@ -73,148 +513,346 @@ const Charts = () => {
     const duplicates =
         overview?.duplicates || {};
 
-    const columns =
+    const columnInformation =
         overview?.column_information || [];
 
     const describe =
         overview?.describe || {};
 
 
-    // =====================================
-    // 3. IDENTIFY NUMERICAL COLUMNS
-    // =====================================
+    // -------------------------------------
+    // IDENTIFY DATASET COLUMNS
+    // -------------------------------------
 
-    const numericColumns = Object.keys(describe).filter(
-        (column) => {
+    const allColumns = rows.length > 0
+        ? Object.keys(rows[0])
+        : [];
 
-            const stats = describe[column];
+
+    // NUMERICAL COLUMNS
+
+    const numericColumns = useMemo(() => {
+        return allColumns.filter((column) => {
+
+            const values = rows
+                .map((row) => row[column])
+                .filter(
+                    (value) =>
+                        value !== null &&
+                        value !== undefined &&
+                        String(value).trim() !== ""
+                );
 
             return (
-                stats &&
-                stats.mean !== null &&
-                stats.mean !== undefined &&
-                Number.isFinite(Number(stats.mean))
+                values.length > 0 &&
+                values.every(
+                    (value) => toNumber(value) !== null
+                )
+            );
+
+        });
+    }, [rows, allColumns]);
+
+
+    // CATEGORICAL COLUMNS
+
+    const categoricalColumns = useMemo(() => {
+        return allColumns.filter(
+            (column) =>
+                !numericColumns.includes(column)
+        );
+    }, [allColumns, numericColumns]);
+
+
+    // -------------------------------------
+    // STATE MANAGEMENT
+    // -------------------------------------
+
+    const [selectedColumn, setSelectedColumn] =
+        useState("");
+
+    const [xColumn, setXColumn] =
+        useState("");
+
+    const [yColumn, setYColumn] =
+        useState("");
+
+    const [categoryColumn, setCategoryColumn] =
+        useState("");
+
+
+    // DEFAULT COLUMN SELECTIONS
+
+    useEffect(() => {
+
+        if (
+            !selectedColumn &&
+            numericColumns.length > 0
+        ) {
+            setSelectedColumn(numericColumns[0]);
+        }
+
+        if (
+            !xColumn &&
+            numericColumns.length > 0
+        ) {
+            setXColumn(numericColumns[0]);
+        }
+
+        if (
+            !yColumn &&
+            numericColumns.length > 1
+        ) {
+            setYColumn(numericColumns[1]);
+
+        } else if (
+            !yColumn &&
+            numericColumns.length === 1
+        ) {
+            setYColumn(numericColumns[0]);
+        }
+
+        if (
+            !categoryColumn &&
+            categoricalColumns.length > 0
+        ) {
+            setCategoryColumn(
+                categoricalColumns[0]
             );
         }
-    );
+
+    }, [
+        numericColumns,
+        categoricalColumns,
+        selectedColumn,
+        xColumn,
+        yColumn,
+        categoryColumn
+    ]);
 
 
-    // =====================================
-    // 4. STATE MANAGEMENT
-    // =====================================
-
-    const [selectedColumn, setSelectedColumn] = useState(
-        numericColumns[0] || ''
-    );
-
-
-    // =====================================
-    // 5. MISSING VALUES CHART DATA
-    // =====================================
+    // -------------------------------------
+    // MISSING VALUES CHART
+    // -------------------------------------
 
     const missingChartData = Object.entries(
         missingValues.column_wise || {}
-    ).map(([column, count]) => ({
-
-        column: column,
-
-        missing: Number(count)
-
-    })).filter(
-        (item) => Number.isFinite(item.missing)
-    );
-
-
-    // =====================================
-    // 6. DATA TYPE DISTRIBUTION
-    // =====================================
-
-    const dataTypeCounts = columns.reduce(
-        (result, column) => {
-
-            const type = column.datatype || 'Unknown';
-
-            result[type] = (result[type] || 0) + 1;
-
-            return result;
-
-        },
-        {}
-    );
+    )
+        .map(([column, count]) => ({
+            column,
+            missing: Number(count)
+        }))
+        .filter(
+            (item) =>
+                Number.isFinite(item.missing)
+        );
 
 
-    const dataTypeChartData = Object.entries(
-        dataTypeCounts
-    ).map(([name, value]) => ({
+    // -------------------------------------
+    // DATA TYPE DISTRIBUTION
+    // -------------------------------------
 
-        name,
+    const dataTypeCounts =
+        columnInformation.reduce(
+            (result, column) => {
 
-        value
+                const type =
+                    column.datatype ||
+                    column.data_type ||
+                    column.data_type_name ||
+                    "Unknown";
 
-    }));
+                result[type] =
+                    (result[type] || 0) + 1;
+
+                return result;
+            },
+            {}
+        );
+
+    const dataTypeChartData =
+        Object.entries(dataTypeCounts).map(
+            ([name, value]) => ({
+                name,
+                value
+            })
+        );
 
 
-    // =====================================
-    // 7. NUMERICAL STATISTICS
-    // =====================================
+    // -------------------------------------
+    // NUMERICAL STATISTICS
+    // -------------------------------------
 
-    const selectedStats = describe[selectedColumn] || {};
-
+    const selectedStats =
+        describe[selectedColumn] || {};
 
     const statisticalChartData = [
-
         {
-            statistic: 'Minimum',
+            statistic: "Minimum",
             value: selectedStats.min
         },
-
         {
-            statistic: '25%',
-            value: selectedStats['25%']
+            statistic: "25%",
+            value: selectedStats["25%"]
         },
-
         {
-            statistic: 'Median',
-            value: selectedStats['50%']
+            statistic: "Median",
+            value: selectedStats["50%"]
         },
-
         {
-            statistic: '75%',
-            value: selectedStats['75%']
+            statistic: "75%",
+            value: selectedStats["75%"]
         },
-
         {
-            statistic: 'Maximum',
+            statistic: "Maximum",
             value: selectedStats.max
         }
-
-    ].filter(
-        (item) =>
-            item.value !== null &&
-            item.value !== undefined &&
-            Number.isFinite(Number(item.value))
-    ).map((item) => ({
-
-        ...item,
-
-        value: Number(item.value)
-
-    }));
+    ]
+        .filter(
+            (item) =>
+                item.value !== null &&
+                item.value !== undefined &&
+                Number.isFinite(Number(item.value))
+        )
+        .map((item) => ({
+            ...item,
+            value: Number(item.value)
+        }));
 
 
-    // =====================================
-    // 8. NO DATASET HANDLING
-    // =====================================
+    // -------------------------------------
+    // HISTOGRAM
+    // -------------------------------------
+
+    const histogramData = useMemo(() => {
+
+        if (!selectedColumn) return [];
+
+        const values = getNumericValues(
+            rows,
+            selectedColumn
+        );
+
+        return createHistogram(values, 10);
+
+    }, [rows, selectedColumn]);
+
+
+    // -------------------------------------
+    // SCATTER PLOT
+    // -------------------------------------
+
+    const scatterData = useMemo(() => {
+
+        if (!xColumn || !yColumn) return [];
+
+        return rows
+            .map((row) => ({
+                x: toNumber(row[xColumn]),
+                y: toNumber(row[yColumn])
+            }))
+            .filter(
+                (point) =>
+                    point.x !== null &&
+                    point.y !== null
+            );
+
+    }, [rows, xColumn, yColumn]);
+
+
+    // -------------------------------------
+    // CATEGORICAL FREQUENCY
+    // -------------------------------------
+
+    const categoryData = useMemo(() => {
+
+        if (!categoryColumn) return [];
+
+        return getCategoryCounts(
+            rows,
+            categoryColumn
+        );
+
+    }, [rows, categoryColumn]);
+
+
+    // -------------------------------------
+    // CORRELATION MATRIX
+    // -------------------------------------
+
+    const correlationData = useMemo(() => {
+
+        return numericColumns.map(
+            (columnA) => ({
+                column: columnA,
+
+                values: numericColumns.map(
+                    (columnB) =>
+                        getCorrelation(
+                            rows,
+                            columnA,
+                            columnB
+                        )
+                )
+            })
+        );
+
+    }, [rows, numericColumns]);
+
+
+    // -------------------------------------
+    // BOX PLOT STATISTICS
+    // -------------------------------------
+
+    const boxStatistics = useMemo(() => {
+
+        if (!selectedColumn) return null;
+
+        const values = getNumericValues(
+            rows,
+            selectedColumn
+        );
+
+        return getBoxStatistics(values);
+
+    }, [rows, selectedColumn]);
+
+
+    // -------------------------------------
+    // DATASET QUALITY
+    // -------------------------------------
+
+    const missingPercentage =
+        Number(missingValues.percentage || 0);
+
+    const duplicatePercentage =
+        Number(duplicates.percentage || 0);
+
+
+    // -------------------------------------
+    // NO DATASET HANDLING
+    // -------------------------------------
 
     if (!overview) {
-
         return (
+            <div
+                className="
+                    min-h-screen
+                    flex items-center justify-center
+                    bg-black p-6 text-white
+                "
+            >
 
-            <div className="min-h-full flex justify-center
-                items-center bg-slate-950 text-white">
-
-                <div className="text-center bg-white/10
-                    p-10 rounded-xl">
+                <div
+                    className="
+                        rounded-xl
+                        border border-[#252525]
+                        bg-[#0b0b0b15]
+                        backdrop-blur-lg
+                        p-10
+                        text-center
+                    "
+                >
 
                     <AlertCircle
                         size={45}
@@ -225,192 +863,227 @@ const Charts = () => {
                         No Dataset Found
                     </h1>
 
-                    <p className="text-gray-400 mt-2">
+                    <p className="mt-3 text-gray-400">
                         Please upload a CSV file first.
                     </p>
 
                 </div>
 
             </div>
-
         );
     }
 
 
-    // =====================================
-    // 9. MAIN CHART DASHBOARD
-    // =====================================
+    // =====================================================
+    // 5. MAIN DASHBOARD UI
+    // =====================================================
 
     return (
 
-        <div className="min-h-full w-full bg-slate-950
-            text-white p-6 md:p-8 space-y-8">
-
+        <div
+            className="
+                min-h-screen w-full
+                bg-black p-5 md:p-8
+                space-y-8 text-white
+                bg-cover bg-center
+            "
+            style={{
+                backgroundImage: `url(${mariola})`
+            }}
+        >
 
             {/* =====================================
                 HEADER
             ===================================== */}
 
-            <div>
+            <div
+                className="
+                    flex flex-col
+                    gap-4
+                    md:flex-row
+                    md:items-center
+                    md:justify-between
+                "
+            >
 
-                <h1 className="text-3xl font-bold">
-                    Data Visualization
-                </h1>
+                <div>
 
-                <p className="text-gray-400 mt-2">
-                    Visual analysis of your uploaded dataset.
-                </p>
+                    <div className="flex items-center gap-3">
 
-                <p className="text-sm text-violet-400 mt-2">
-                    File: {data.filename || 'Uploaded Dataset'}
-                </p>
+                        <div
+                            className="
+                                rounded-xl
+                                border border-[#252525]
+                                bg-[#0b0b0b15]
+                                backdrop-blur-lg
+                                p-3
+                            "
+                        >
 
-            </div>
+                            <BarChart3
+                                className="text-black"
+                                size={28}
+                            />
 
+                        </div>
 
-            {/* =====================================
-                DATASET SUMMARY CARDS
-            ===================================== */}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2
-                lg:grid-cols-4 gap-5">
-
-
-                {/* Total Rows */}
-
-                <div className="bg-white rounded-xl p-5 text-gray-900">
-
-                    <div className="flex justify-between">
-
-                        <p className="text-gray-500">
-                            Total Rows
-                        </p>
-
-                        <Database className="text-blue-600" />
+                        <h1
+                            className="
+                                text-3xl font-bold
+                                tracking-tight text-black
+                            "
+                        >
+                            Data Visualization
+                        </h1>
 
                     </div>
 
-                    <h2 className="text-3xl font-bold mt-3 text-blue-600">
+                    <p className="mt-3 text-sm text-gray-950">
+                        Explore patterns, distributions and
+                        relationships in your uploaded dataset.
+                    </p>
 
-                        {datasetSize.total_rows ?? 0}
-
-                    </h2>
+                    <p className="mt-3 text-sm text-black bg-white rounded-2xl p-3">
+                        File: {data?.filename || "Uploaded Dataset"}
+                    </p>
 
                 </div>
 
 
-                {/* Total Columns */}
+                {/* DATASET DIMENSIONS */}
 
-                <div className="bg-white rounded-xl p-5 text-gray-900">
+                <div
+                    className="
+                        rounded-lg
+                        border border-[#252525]
+                        bg-[#0b0b0b15]
+                        backdrop-blur-lg
+                        px-4 py-3
+                    "
+                >
 
-                    <div className="flex justify-between">
+                    <p className="text-xs text-gray-950">
+                        DATASET DIMENSIONS
+                    </p>
 
-                        <p className="text-gray-500">
-                            Total Columns
-                        </p>
+                    <p className="mt-1 text-lg font-semibold text-white">
 
-                        <ChartNoAxesColumn className="text-green-600" />
+                        {datasetSize.total_rows ?? rows.length}
+                        {" "}Rows
 
-                    </div>
+                        <span className="mx-2 text-black">
+                            ×
+                        </span>
 
-                    <h2 className="text-3xl font-bold mt-3 text-green-600">
-
-                        {datasetSize.total_columns ?? 0}
-
-                    </h2>
-
-                </div>
-
-
-                {/* Missing Values */}
-
-                <div className="bg-white rounded-xl p-5 text-gray-900">
-
-                    <div className="flex justify-between">
-
-                        <p className="text-gray-500">
-                            Missing Values
-                        </p>
-
-                        <Activity className="text-red-500" />
-
-                    </div>
-
-                    <h2 className="text-3xl font-bold mt-3 text-red-500">
-
-                        {missingValues.total ?? 0}
-
-                    </h2>
-
-                </div>
-
-
-                {/* Duplicate Rows */}
-
-                <div className="bg-white rounded-xl p-5 text-gray-900">
-
-                    <div className="flex justify-between">
-
-                        <p className="text-gray-500">
-                            Duplicate Rows
-                        </p>
-
-                        <ChartPie className="text-orange-500" />
-
-                    </div>
-
-                    <h2 className="text-3xl font-bold mt-3 text-orange-500">
-
-                        {duplicates.count ?? 0}
-
-                    </h2>
-
-                </div>
-
-            </div>
-
-
-            {/* =====================================
-                CHART GRID - ROW 1
-            ===================================== */}
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-
-                {/* =====================================
-                    CHART 1 - MISSING VALUES
-                ===================================== */}
-
-                <div className="bg-white rounded-xl p-6
-                    text-gray-900 shadow-xl">
-
-                    <h2 className="text-xl font-semibold">
-
-                        Missing Values Analysis
-
-                    </h2>
-
-                    <p className="text-sm text-gray-500 mt-2 mb-6">
-
-                        Missing values across dataset columns.
+                        {datasetSize.total_columns ?? allColumns.length}
+                        {" "}Columns
 
                     </p>
 
+                </div>
+
+            </div>
+
+
+            {/* =====================================
+                SUMMARY CARDS
+            ===================================== */}
+
+            <div
+                className="
+                    grid grid-cols-1
+                    gap-4 sm:grid-cols-2
+                    xl:grid-cols-4
+                "
+            >
+
+                <SummaryCard
+                    title="Total Rows"
+                    value={(
+                        datasetSize.total_rows ??
+                        rows.length
+                    ).toLocaleString()}
+                    icon={Database}
+                    color="bg-blue-500/10 text-blue-400"
+                    description="Total records in dataset"
+                />
+
+                <SummaryCard
+                    title="Total Columns"
+                    value={
+                        datasetSize.total_columns ??
+                        allColumns.length
+                    }
+                    icon={ChartNoAxesColumn}
+                    color="bg-green-500/10 text-green-400"
+                    description="Available dataset attributes"
+                />
+
+                <SummaryCard
+                    title="Missing Values"
+                    value={(
+                        missingValues.total ?? 0
+                    ).toLocaleString()}
+                    icon={Activity}
+                    color="bg-red-500/10 text-red-400"
+                    description={`${missingPercentage}% of total cells`}
+                />
+
+                <SummaryCard
+                    title="Duplicate Rows"
+                    value={(
+                        duplicates.count ?? 0
+                    ).toLocaleString()}
+                    icon={ChartPie}
+                    color="bg-orange-500/10 text-orange-400"
+                    description={`${duplicatePercentage}% duplicate records`}
+                />
+
+            </div>
+
+
+            {/* =====================================
+                ROW 1 - MISSING VALUES + DATA TYPES
+            ===================================== */}
+
+            <div
+                className="
+                    grid grid-cols-1
+                    gap-5 xl:grid-cols-2
+                "
+            >
+
+                {/* MISSING VALUES */}
+
+                <ChartCard
+                    title="Missing Values Analysis"
+                    description="Missing values across dataset columns."
+                >
 
                     {missingChartData.some(
                         (item) => item.missing > 0
                     ) ? (
 
-                        <ResponsiveContainer width="100%" height={320}>
+                        <ResponsiveContainer
+                            width="100%"
+                            height={320}
+                        >
 
-                            <BarChart data={missingChartData}>
+                            <BarChart
+                                data={missingChartData}
+                                margin={{
+                                    top: 10,
+                                    right: 10,
+                                    left: 0,
+                                    bottom: 10
+                                }}
+                            >
 
-                                <CartesianGrid
-                                    strokeDasharray="3 3"
-                                />
+                                <CartesianGrid {...GRID_STYLE} />
 
                                 <XAxis
                                     dataKey="column"
+                                    {...AXIS_STYLE}
                                     angle={-25}
                                     textAnchor="end"
                                     interval={0}
@@ -418,10 +1091,13 @@ const Charts = () => {
                                 />
 
                                 <YAxis
+                                    {...AXIS_STYLE}
                                     allowDecimals={false}
                                 />
 
-                                <Tooltip />
+                                <Tooltip
+                                    contentStyle={TOOLTIP_STYLE}
+                                />
 
                                 <Legend />
 
@@ -437,42 +1113,27 @@ const Charts = () => {
                         </ResponsiveContainer>
 
                     ) : (
-
-                        <div className="h-80 flex justify-center
-                            items-center text-green-600">
-
-                            No missing values found.
-
-                        </div>
-
+                        <EmptyChart
+                            message="No missing values found."
+                        />
                     )}
 
-                </div>
+                </ChartCard>
 
 
-                {/* =====================================
-                    CHART 2 - DATA TYPE DISTRIBUTION
-                ===================================== */}
+                {/* DATA TYPE DISTRIBUTION */}
 
-                <div className="bg-white rounded-xl p-6
-                    text-gray-900 shadow-xl">
-
-                    <h2 className="text-xl font-semibold">
-
-                        Column Data Type Distribution
-
-                    </h2>
-
-                    <p className="text-sm text-gray-500 mt-2 mb-6">
-
-                        Distribution of numerical and categorical columns.
-
-                    </p>
-
+                <ChartCard
+                    title="Column Data Type Distribution"
+                    description="Distribution of different column data types."
+                >
 
                     {dataTypeChartData.length > 0 ? (
 
-                        <ResponsiveContainer width="100%" height={320}>
+                        <ResponsiveContainer
+                            width="100%"
+                            height={320}
+                        >
 
                             <PieChart>
 
@@ -488,18 +1149,22 @@ const Charts = () => {
 
                                     {dataTypeChartData.map(
                                         (entry, index) => (
-
                                             <Cell
                                                 key={entry.name}
-                                                fill={COLORS[index % COLORS.length]}
+                                                fill={
+                                                    COLORS[
+                                                        index % COLORS.length
+                                                    ]
+                                                }
                                             />
-
                                         )
                                     )}
 
                                 </Pie>
 
-                                <Tooltip />
+                                <Tooltip
+                                    contentStyle={TOOLTIP_STYLE}
+                                />
 
                                 <Legend />
 
@@ -508,195 +1173,1019 @@ const Charts = () => {
                         </ResponsiveContainer>
 
                     ) : (
-
-                        <div className="h-80 flex justify-center
-                            items-center text-gray-500">
-
-                            No column information available.
-
-                        </div>
-
+                        <EmptyChart
+                            message="No column type information available."
+                        />
                     )}
 
-                </div>
+                </ChartCard>
 
             </div>
 
 
             {/* =====================================
-                CHART 3 - NUMERICAL STATISTICS
+                NUMERICAL STATISTICAL ANALYSIS
             ===================================== */}
 
-            <div className="bg-white rounded-xl p-6
-                text-gray-900 shadow-xl">
+            <ChartCard
+                title="Numerical Statistical Analysis"
+                description="Compare minimum, quartiles, median and maximum values."
+            >
 
+                {numericColumns.length > 0 ? (
 
-                <h2 className="text-xl font-semibold">
+                    <>
 
-                    Numerical Statistical Analysis
+                        <div className="mb-6">
 
-                </h2>
-
-
-                <p className="text-sm text-gray-500 mt-2 mb-5">
-
-                    Compare minimum, quartiles, median and maximum
-                    for numerical columns.
-
-                </p>
-
-
-                {/* COLUMN SELECTOR */}
-
-                <div className="mb-6">
-
-                    <label className="block text-sm font-medium mb-2">
-
-                        Select Numerical Column
-
-                    </label>
-
-
-                    <select
-
-                        value={selectedColumn}
-
-                        onChange={(event) =>
-                            setSelectedColumn(event.target.value)
-                        }
-
-                        className="border border-gray-300
-                            rounded-lg p-3 w-full md:w-80
-                            bg-white text-gray-900"
-
-                    >
-
-                        {numericColumns.map((column) => (
-
-                            <option key={column} value={column}>
-
-                                {column}
-
-                            </option>
-
-                        ))}
-
-                    </select>
-
-                </div>
-
-
-                {/* STATISTICS CHART */}
-
-                {statisticalChartData.length > 0 ? (
-
-                    <ResponsiveContainer width="100%" height={350}>
-
-                        <BarChart data={statisticalChartData}>
-
-                            <CartesianGrid
-                                strokeDasharray="3 3"
+                            <SelectField
+                                label="Select Numerical Column"
+                                value={selectedColumn}
+                                onChange={setSelectedColumn}
+                                options={numericColumns}
                             />
 
-                            <XAxis dataKey="statistic" />
+                        </div>
 
-                            <YAxis />
 
-                            <Tooltip />
+                        {statisticalChartData.length > 0 ? (
 
-                            <Legend />
+                            <ResponsiveContainer
+                                width="100%"
+                                height={330}
+                            >
 
-                            <Bar
-                                dataKey="value"
-                                name={selectedColumn}
-                                fill="#6366f1"
-                                radius={[6, 6, 0, 0]}
+                                <BarChart
+                                    data={statisticalChartData}
+                                    margin={{
+                                        top: 10,
+                                        right: 10,
+                                        left: 0,
+                                        bottom: 10
+                                    }}
+                                >
+
+                                    <CartesianGrid {...GRID_STYLE} />
+
+                                    <XAxis
+                                        dataKey="statistic"
+                                        {...AXIS_STYLE}
+                                    />
+
+                                    <YAxis {...AXIS_STYLE} />
+
+                                    <Tooltip
+                                        contentStyle={TOOLTIP_STYLE}
+                                    />
+
+                                    <Legend />
+
+                                    <Bar
+                                        dataKey="value"
+                                        name={selectedColumn}
+                                        fill="#6366f1"
+                                        radius={[6, 6, 0, 0]}
+                                    />
+
+                                </BarChart>
+
+                            </ResponsiveContainer>
+
+                        ) : (
+                            <EmptyChart
+                                message="Statistical information is unavailable."
                             />
+                        )}
 
-                        </BarChart>
-
-                    </ResponsiveContainer>
+                    </>
 
                 ) : (
+                    <EmptyChart
+                        message="No numerical columns detected."
+                    />
+                )}
 
-                    <div className="h-80 flex justify-center
-                        items-center text-gray-500">
+            </ChartCard>
 
-                        No numerical statistical data available.
+
+            {/* =====================================
+                HISTOGRAM + SCATTER PLOT
+            ===================================== */}
+
+            <div
+                className="
+                    grid grid-cols-1
+                    gap-5 xl:grid-cols-2
+                "
+            >
+
+                {/* HISTOGRAM */}
+
+                <ChartCard
+                    title="Numerical Distribution"
+                    description="Understand the frequency distribution of numerical values."
+                >
+
+                    {numericColumns.length > 0 ? (
+
+                        <>
+
+                            <div className="mb-5">
+
+                                <SelectField
+                                    label="Select Numerical Column"
+                                    value={selectedColumn}
+                                    onChange={setSelectedColumn}
+                                    options={numericColumns}
+                                />
+
+                            </div>
+
+                            <ResponsiveContainer
+                                width="100%"
+                                height={320}
+                            >
+
+                                <BarChart
+                                    data={histogramData}
+                                    margin={{
+                                        top: 10,
+                                        right: 10,
+                                        left: 0,
+                                        bottom: 10
+                                    }}
+                                >
+
+                                    <CartesianGrid {...GRID_STYLE} />
+
+                                    <XAxis
+                                        dataKey="range"
+                                        {...AXIS_STYLE}
+                                        angle={-25}
+                                        textAnchor="end"
+                                        height={75}
+                                    />
+
+                                    <YAxis
+                                        {...AXIS_STYLE}
+                                        allowDecimals={false}
+                                    />
+
+                                    <Tooltip
+                                        contentStyle={TOOLTIP_STYLE}
+                                    />
+
+                                    <Legend />
+
+                                    <Bar
+                                        dataKey="count"
+                                        name="Frequency"
+                                        fill="#8b5cf6"
+                                        radius={[5, 5, 0, 0]}
+                                    />
+
+                                </BarChart>
+
+                            </ResponsiveContainer>
+
+                        </>
+
+                    ) : (
+                        <EmptyChart
+                            message="No numerical columns available."
+                        />
+                    )}
+
+                </ChartCard>
+
+
+                {/* SCATTER PLOT */}
+
+                <ChartCard
+                    title="Numerical Relationship Analysis"
+                    description="Compare two numerical columns to identify possible relationships."
+                >
+
+                    {numericColumns.length > 0 ? (
+
+                        <>
+
+                            <div
+                                className="
+                                    flex flex-col
+                                    gap-4 mb-5
+                                    md:flex-row
+                                "
+                            >
+
+                                <SelectField
+                                    label="X Axis"
+                                    value={xColumn}
+                                    onChange={setXColumn}
+                                    options={numericColumns}
+                                />
+
+                                <SelectField
+                                    label="Y Axis"
+                                    value={yColumn}
+                                    onChange={setYColumn}
+                                    options={numericColumns}
+                                />
+
+                            </div>
+
+
+                            {scatterData.length > 0 ? (
+
+                                <ResponsiveContainer
+                                    width="100%"
+                                    height={320}
+                                >
+
+                                    <ScatterChart
+                                        margin={{
+                                            top: 10,
+                                            right: 10,
+                                            left: 0,
+                                            bottom: 10
+                                        }}
+                                    >
+
+                                        <CartesianGrid {...GRID_STYLE} />
+
+                                        <XAxis
+                                            type="number"
+                                            dataKey="x"
+                                            name={xColumn}
+                                            {...AXIS_STYLE}
+                                        />
+
+                                        <YAxis
+                                            type="number"
+                                            dataKey="y"
+                                            name={yColumn}
+                                            {...AXIS_STYLE}
+                                        />
+
+                                        <Tooltip
+                                            cursor={{
+                                                strokeDasharray: "3 3"
+                                            }}
+                                            contentStyle={TOOLTIP_STYLE}
+                                        />
+
+                                        <Legend />
+
+                                        <Scatter
+                                            name={`${xColumn} vs ${yColumn}`}
+                                            data={scatterData}
+                                            fill="#06b6d4"
+                                        />
+
+                                    </ScatterChart>
+
+                                </ResponsiveContainer>
+
+                            ) : (
+                                <EmptyChart
+                                    message="No valid numerical pairs found."
+                                />
+                            )}
+
+                        </>
+
+                    ) : (
+                        <EmptyChart
+                            message="At least one numerical column is required."
+                        />
+                    )}
+
+                </ChartCard>
+
+            </div>
+
+
+            {/* =====================================
+                CATEGORICAL FREQUENCY
+            ===================================== */}
+
+            <ChartCard
+                title="Categorical Frequency Analysis"
+                description="Explore the ten most frequent values in a categorical column."
+                className=""
+            >
+
+                {categoricalColumns.length > 0 ? (
+
+                    <>
+
+                        <div className="mb-5">
+
+                            <SelectField
+                                label="Select Categorical Column"
+                                value={categoryColumn}
+                                onChange={setCategoryColumn}
+                                options={categoricalColumns}
+                            />
+
+                        </div>
+
+
+                        {categoryData.length > 0 ? (
+
+                            <ResponsiveContainer
+                                width="100%"
+                                height={350}
+                            >
+
+                                <BarChart
+                                    data={categoryData}
+                                    margin={{
+                                        top: 10,
+                                        right: 10,
+                                        left: 0,
+                                        bottom: 10
+                                    }}
+                                >
+
+                                    <CartesianGrid {...GRID_STYLE} />
+
+                                    <XAxis
+                                        dataKey="name"
+                                        {...AXIS_STYLE}
+                                        angle={-25}
+                                        textAnchor="end"
+                                        height={80}
+                                    />
+
+                                    <YAxis
+                                        {...AXIS_STYLE}
+                                        allowDecimals={false}
+                                    />
+
+                                    <Tooltip
+                                        contentStyle={TOOLTIP_STYLE}
+                                    />
+
+                                    <Legend />
+
+                                    <Bar
+                                        dataKey="count"
+                                        name="Frequency"
+                                        fill="#10b981"
+                                        radius={[5, 5, 0, 0]}
+                                    />
+
+                                </BarChart>
+
+                            </ResponsiveContainer>
+
+                        ) : (
+                            <EmptyChart
+                                message="No category values available."
+                            />
+                        )}
+
+                    </>
+
+                ) : (
+                    <EmptyChart
+                        message="No categorical columns detected."
+                    />
+                )}
+
+            </ChartCard>
+
+
+            {/* =====================================
+                CORRELATION HEATMAP
+            ===================================== */}
+
+            <ChartCard
+                title="Correlation Heatmap"
+                description="Explore positive and negative relationships between numerical columns."
+             >
+
+                {numericColumns.length > 0 ? (
+
+                    <div className="overflow-x-auto ">
+
+                        <table className="min-w-max w-full text-sm text-center border-collapse">
+
+                            <thead>
+
+                                <tr className="bg-[#141414]">
+
+                                    <th
+                                        className="
+                                            border border-[#292929]
+                                            p-4 text-left
+                                            text-xs font-semibold
+                                            uppercase tracking-wider
+                                            text-gray-400
+                                        "
+                                    >
+                                        Column
+                                    </th>
+
+                                    {numericColumns.map(
+                                        (column) => (
+                                            <th
+                                                key={column}
+                                                className="
+                                                    border border-[#292929]
+                                                    p-4
+                                                    text-xs font-semibold
+                                                    uppercase tracking-wider
+                                                    text-gray-400
+                                                "
+                                            >
+                                                {column}
+                                            </th>
+                                        )
+                                    )}
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody>
+
+                                {correlationData.map(
+                                    (row) => (
+
+                                        <tr key={row.column}>
+
+                                            <th
+                                                className="
+                                                    border border-[#292929]
+                                                    bg-[#111111]
+                                                    p-4 text-left
+                                                    font-medium
+                                                    text-gray-300
+                                                "
+                                            >
+                                                {row.column}
+                                            </th>
+
+
+                                            {row.values.map(
+                                                (value, index) => {
+
+                                                    const intensity =
+                                                        value === null
+                                                            ? 0
+                                                            : Math.abs(value);
+
+                                                    const background =
+                                                        value === null
+                                                            ? "#292929"
+                                                            : value >= 0
+                                                                ? `rgba(16, 185, 129, ${0.15 + intensity * 0.75})`
+                                                                : `rgba(239, 68, 68, ${0.15 + intensity * 0.75})`;
+
+                                                    return (
+
+                                                        <td
+                                                            key={`${row.column}-${numericColumns[index]}`}
+                                                            className="
+                                                                border border-[#292929]
+                                                                p-4 font-semibold
+                                                                text-white
+                                                            "
+                                                            style={{
+                                                                backgroundColor:
+                                                                    background
+                                                            }}
+                                                        >
+
+                                                            {value === null
+                                                                ? "N/A"
+                                                                : value.toFixed(2)}
+
+                                                        </td>
+
+                                                    );
+
+                                                }
+                                            )}
+
+                                        </tr>
+
+                                    )
+                                )}
+
+                            </tbody>
+
+                        </table>
 
                     </div>
 
+                ) : (
+                    <EmptyChart
+                        message="No numerical columns available for correlation analysis."
+                    />
                 )}
 
-            </div>
+
+                {/* CORRELATION LEGEND */}
+
+                <div
+                    className="
+                        flex flex-wrap gap-5
+                        mt-6 text-xs text-gray-400
+                    "
+                >
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-emerald-500" />
+                        Positive correlation
+                    </span>
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-red-500" />
+                        Negative correlation
+                    </span>
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-gray-600" />
+                        Not available
+                    </span>
+
+                </div>
+
+            </ChartCard>
+
+
+            {/* =====================================
+                BOX PLOT / OUTLIER ANALYSIS
+            ===================================== */}
+
+            <ChartCard
+                title="Box Plot & Outlier Analysis"
+                description="Understand the spread of numerical data, quartiles and potential outliers."
+            >
+
+                {boxStatistics ? (
+
+                    <>
+
+                        {/* QUARTILE SUMMARY */}
+
+                        <div
+                            className="
+                                grid grid-cols-2
+                                gap-4 mb-7
+                                md:grid-cols-5
+                            "
+                        >
+
+                            {[
+                                ["Minimum", boxStatistics.min],
+                                ["Q1", boxStatistics.q1],
+                                ["Median", boxStatistics.median],
+                                ["Q3", boxStatistics.q3],
+                                ["Maximum", boxStatistics.max]
+                            ].map(
+                                ([label, value]) => (
+
+                                    <div
+                                        key={label}
+                                        className="
+                                            rounded-xl
+                                            border border-[#252525]
+                                            bg-[#0b0b0b15]
+                                            p-4
+                                            transition
+                                            hover:border-gray-600
+                                        "
+                                    >
+
+                                        <p className="text-xs text-gray-500">
+                                            {label}
+                                        </p>
+
+                                        <p
+                                            className="
+                                                mt-2 text-lg
+                                                font-semibold text-white
+                                            "
+                                        >
+                                            {Number(value).toLocaleString(
+                                                undefined,
+                                                {
+                                                    maximumFractionDigits: 3
+                                                }
+                                            )}
+                                        </p>
+
+                                    </div>
+
+                                )
+                            )}
+
+                        </div>
+
+
+                        {/* BOX PLOT VISUALIZATION */}
+
+                        <div
+                            className="
+                                rounded-xl
+                                border border-[#252525]
+                                bg-[#0b0b0b15]
+                                p-5
+                            "
+                        >
+
+                            <div
+                                className="
+                                    flex flex-col gap-3
+                                    md:flex-row
+                                    md:items-center
+                                    md:justify-between
+                                "
+                            >
+
+                                <div>
+
+                                    <p className="text-sm text-gray-400">
+                                        Selected column
+                                    </p>
+
+                                    <h3 className="mt-1 text-lg font-semibold text-white">
+                                        {selectedColumn}
+                                    </h3>
+
+                                </div>
+
+                                <div className="text-sm text-orange-400">
+                                    Potential outliers:{" "}
+                                    {boxStatistics.outlierCount}
+                                </div>
+
+                            </div>
+
+
+                            {/* SCALE */}
+
+                            <div className="mt-7">
+
+                                <div
+                                    className="
+                                        mb-3 flex justify-between
+                                        text-xs text-gray-500
+                                    "
+                                >
+
+                                    <span>
+                                        Min: {boxStatistics.min}
+                                    </span>
+
+                                    <span>
+                                        Max: {boxStatistics.max}
+                                    </span>
+
+                                </div>
+
+
+                                {/* BOX PLOT */}
+
+                                <div className="relative flex h-12 items-center">
+
+                                    <div
+                                        className="
+                                            absolute left-0 right-0
+                                            h-0.5 bg-gray-700
+                                        "
+                                    />
+
+
+                                    {/* IQR BOX */}
+
+                                    <div
+                                        className="
+                                            absolute h-7
+                                            rounded
+                                            border-2 border-violet-400
+                                            bg-violet-500/20
+                                        "
+                                        style={{
+                                            left: `${
+                                                boxStatistics.max === boxStatistics.min
+                                                    ? 50
+                                                    : (
+                                                        (boxStatistics.q1 - boxStatistics.min) /
+                                                        (boxStatistics.max - boxStatistics.min)
+                                                    ) * 100
+                                            }%`,
+
+                                            width: `${
+                                                boxStatistics.max === boxStatistics.min
+                                                    ? 0
+                                                    : (
+                                                        (boxStatistics.q3 - boxStatistics.q1) /
+                                                        (boxStatistics.max - boxStatistics.min)
+                                                    ) * 100
+                                            }%`
+                                        }}
+                                    />
+
+
+                                    {/* MEDIAN */}
+
+                                    <div
+                                        className="
+                                            absolute h-10
+                                            w-0.5 bg-cyan-400
+                                        "
+                                        style={{
+                                            left: `${
+                                                boxStatistics.max === boxStatistics.min
+                                                    ? 50
+                                                    : (
+                                                        (boxStatistics.median - boxStatistics.min) /
+                                                        (boxStatistics.max - boxStatistics.min)
+                                                    ) * 100
+                                            }%`
+                                        }}
+                                    />
+
+
+                                    {/* MINIMUM */}
+
+                                    <div
+                                        className="
+                                            absolute left-0
+                                            h-4 w-0.5 bg-gray-300
+                                        "
+                                    />
+
+
+                                    {/* MAXIMUM */}
+
+                                    <div
+                                        className="
+                                            absolute right-0
+                                            h-4 w-0.5 bg-gray-300
+                                        "
+                                    />
+
+                                </div>
+
+
+                                {/* LEGEND */}
+
+                                <div
+                                    className="
+                                        mt-4 flex flex-wrap
+                                        gap-5 text-xs text-gray-400
+                                    "
+                                >
+
+                                    <span className="flex items-center gap-2">
+
+                                        <span
+                                            className="
+                                                h-3 w-3
+                                                border border-violet-400
+                                                bg-violet-500/40
+                                            "
+                                        />
+
+                                        Interquartile range
+
+                                    </span>
+
+                                    <span className="flex items-center gap-2">
+
+                                        <span
+                                            className="
+                                                h-4 w-1
+                                                bg-cyan-400
+                                            "
+                                        />
+
+                                        Median
+
+                                    </span>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                        {/* IQR + OUTLIER CARDS */}
+
+                        <div
+                            className="
+                                mt-5 grid grid-cols-1
+                                gap-4 md:grid-cols-2
+                            "
+                        >
+
+                            <div
+                                className="
+                                    rounded-xl
+                                    border border-[#252525]
+                                    bg-[#0b0b0b15]
+                                    p-5 transition
+                                    hover:border-gray-600
+                                "
+                            >
+
+                                <p className="text-sm text-gray-400">
+                                    Interquartile Range (IQR)
+                                </p>
+
+                                <p className="mt-2 text-2xl font-bold text-violet-400">
+                                    {boxStatistics.iqr.toFixed(3)}
+                                </p>
+
+                            </div>
+
+
+                            <div
+                                className="
+                                    rounded-xl
+                                    border border-[#252525]
+                                    bg-[#0b0b0b15]
+                                    p-5 transition
+                                    hover:border-gray-600
+                                "
+                            >
+
+                                <p className="text-sm text-gray-400">
+                                    Potential Outlier Count
+                                </p>
+
+                                <p className="mt-2 text-2xl font-bold text-orange-400">
+                                    {boxStatistics.outlierCount}
+                                </p>
+
+                            </div>
+
+                        </div>
+
+
+                        <p className="mt-4 text-xs text-gray-500">
+                            Outliers are identified using the
+                            1.5 × IQR rule. This indicates
+                            potential unusual values, not
+                            necessarily errors.
+                        </p>
+
+                    </>
+
+                ) : (
+                    <EmptyChart
+                        message="No numerical data available for box plot analysis."
+                    />
+                )}
+
+            </ChartCard>
 
 
             {/* =====================================
                 DATASET QUALITY INFORMATION
             ===================================== */}
 
-            <div className="bg-white rounded-xl p-6
-                text-gray-900 shadow-xl">
+            <ChartCard
+                title="Dataset Quality Information"
+                description="Review the overall quality of your uploaded dataset."
+            >
 
-                <h2 className="text-xl font-semibold mb-5">
+                <div
+                    className="
+                        grid grid-cols-1
+                        gap-5 md:grid-cols-2
+                    "
+                >
 
-                    Dataset Quality Information
+                    {/* MISSING VALUES */}
 
-                </h2>
+                    <div
+                        className="
+                            rounded-xl
+                            border border-[#252525]
+                            bg-[#0b0b0b15]
+                            backdrop-blur-lg
+                            p-5
+                            transition
+                            hover:border-gray-600
+                        "
+                    >
 
+                        <div className="flex justify-between items-center">
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <p className="text-sm text-gray-400">
+                                Missing Values Percentage
+                            </p>
 
+                            <Activity className="text-red-400" />
 
-                    {/* Missing Percentage */}
+                        </div>
 
-                    <div className="border rounded-lg p-5">
-
-                        <p className="text-gray-500">
-
-                            Missing Values Percentage
-
-                        </p>
-
-                        <h2 className="text-3xl font-bold
-                            text-red-500 mt-3">
-
-                            {missingValues.percentage ?? 0}%
-
+                        <h2 className="mt-4 text-3xl font-bold text-red-400">
+                            {missingPercentage}%
                         </h2>
+
+
+                        {/* PROGRESS BAR */}
+
+                        <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
+
+                            <div
+                                className="h-2 rounded-full bg-red-500 transition-all"
+                                style={{
+                                    width: `${Math.min(
+                                        100,
+                                        Math.max(
+                                            0,
+                                            missingPercentage
+                                        )
+                                    )}%`
+                                }}
+                            />
+
+                        </div>
 
                     </div>
 
 
-                    {/* Duplicate Percentage */}
+                    {/* DUPLICATES */}
 
-                    <div className="border rounded-lg p-5">
+                    <div
+                        className="
+                            rounded-xl
+                            border border-[#252525]
+                            bg-[#0b0b0b15]
+                            backdrop-blur-lg
+                            p-5
+                            transition
+                            hover:border-gray-600
+                        "
+                    >
 
-                        <p className="text-gray-500">
+                        <div className="flex justify-between items-center">
 
-                            Duplicate Rows Percentage
+                            <p className="text-sm text-gray-400">
+                                Duplicate Rows Percentage
+                            </p>
 
-                        </p>
+                            <RefreshCw className="text-orange-400" />
 
-                        <h2 className="text-3xl font-bold
-                            text-orange-500 mt-3">
+                        </div>
 
-                            {duplicates.percentage ?? 0}%
-
+                        <h2 className="mt-4 text-3xl font-bold text-orange-400">
+                            {duplicatePercentage}%
                         </h2>
 
-                    </div>
 
+                        {/* PROGRESS BAR */}
+
+                        <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
+
+                            <div
+                                className="h-2 rounded-full bg-orange-500 transition-all"
+                                style={{
+                                    width: `${Math.min(
+                                        100,
+                                        Math.max(
+                                            0,
+                                            duplicatePercentage
+                                        )
+                                    )}%`
+                                }}
+                            />
+
+                        </div>
+
+                    </div>
 
                 </div>
 
-            </div>
+            </ChartCard>
 
+
+            {/* =====================================
+                FOOTER
+            ===================================== */}
+
+            <div className="border-t border-[#252525] pt-5">
+
+                <p className="text-center text-xs text-gray-500">
+                    AnalyzerX | Dataset Visualization Dashboard
+                </p>
+
+            </div>
 
         </div>
 
     );
-
 };
 
 export default Charts;

@@ -221,14 +221,13 @@ const DataModule = () => {
                                             row[column] === undefined ||
                                             row[column] === "" ? (
 
-                                                <span className="text-gray-600 italic">
-                                                    NULL
+                                                <span className="text-gray-200 bg-black/75
+                                                p-2 rounded-xl italic">
+                                                    Null
                                                 </span>
 
                                             ) : (
-
                                                 String(row[column])
-
                                             )}
 
                                         </td>

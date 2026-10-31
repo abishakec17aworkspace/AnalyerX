@@ -14,6 +14,7 @@ import DataModule from './Components/datamodule'
 import Charts from './Components/charts'
 import LandingPage from './Pages/LandingPage'
 import Layout from './Components/Layout'
+import CleaningPage from './Components/CleaningPage'
 
 // Shared layout for all workspace pages
 const WorkspaceLayout = () => {
@@ -63,6 +64,10 @@ const App = () => {
           <Route
             path="/Profile"
             element={<PlaceholderPage title="Profile" />}
+          />
+          <Route
+            path="/CleaningPage"
+            element={<CleaningPage/>}
           />
         </Route>
       </Routes>

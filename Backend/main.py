@@ -1,6 +1,7 @@
 from fastapi import FastAPI,UploadFile,File
 from fastapi.middleware.cors import CORSMiddleware
 from routes.Upload import router as uploader_route
+# from routes.Analyze import router as analyze_router
 
 app = FastAPI(
     # title="Gaming Analytics API",
@@ -37,3 +38,4 @@ def health():
 #     }
 
 app.include_router(uploader_route)
+# app.include_router(analyze_router)

@@ -10,6 +10,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   HomeIcon,
+  BrushCleaningIcon,
+  ScanLine
 } from 'lucide-react'
 
 const Navbar = () => {
@@ -21,9 +23,10 @@ const Navbar = () => {
   const menuItems = [
     { name: 'Interface', path: '/Interface', icon: HomeIcon },
     { name: 'Dashboard', path: '/Dashboard', icon: LayoutDashboard },
+    { name: 'Data', path: '/Data', icon: Database },
     { name: 'Charts', path: '/Charts', icon: ChartNoAxesColumn },
     { name: 'Report', path: '/Report', icon: FileText },
-    { name: 'Data', path: '/Data', icon: Database },
+    { name: 'Clean', path: '/CleaningPage', icon: ScanLine },
   ]
 
   const isActive = (path) => location.pathname === path

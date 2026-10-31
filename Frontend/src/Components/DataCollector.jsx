@@ -155,12 +155,13 @@ const DataCollector = () => {
                     flex flex-col justify-center items-center
                     gap-4 rounded-xl border-2 border-dashed
                     border-violet-300 hover:border-violet-500
-                    transition-colors">
+                    transition-colors"
+                    onClick={HandleUploadClick}>
 
                     {/* Clickable Upload Area */}
                     <button
                         type="button"
-                        onClick={HandleUploadClick}
+                        
                         className="flex flex-col items-center gap-3
                             cursor-pointer focus:outline-none
                             rounded-lg p-2"
