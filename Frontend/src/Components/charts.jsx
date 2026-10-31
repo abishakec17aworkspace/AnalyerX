@@ -29,7 +29,6 @@ import {
     RefreshCw
 } from "lucide-react";
 
-
 // =====================================================
 // 1. CONSTANTS
 // =====================================================
@@ -59,9 +58,8 @@ const GRID_STYLE = {
 
 const AXIS_STYLE = {
     stroke: "white",
-    fontSize:16
+    fontSize: 16
 };
-
 
 // =====================================================
 // 2. HELPER FUNCTIONS
@@ -73,16 +71,21 @@ const toNumber = (value) => {
     if (
         value === null ||
         value === undefined ||
-        value === ""
+        String(value).trim() === ""
     ) {
         return null;
     }
 
-    const number = Number(value);
+    // Remove commas from numeric strings.
+    const cleanedValue =
+        typeof value === "string"
+            ? value.replace(/,/g, "").trim()
+            : value;
+
+    const number = Number(cleanedValue);
 
     return Number.isFinite(number) ? number : null;
 };
-
 
 // Extract numerical values from a column.
 
@@ -92,6 +95,52 @@ const getNumericValues = (rows, column) => {
         .filter((value) => value !== null);
 };
 
+// Calculate percentile using interpolation.
+
+const calculatePercentile = (sortedValues, percentile) => {
+    if (!sortedValues.length) return null;
+
+    const index =
+        (sortedValues.length - 1) * percentile;
+
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+
+    if (lower === upper) {
+        return sortedValues[lower];
+    }
+
+    return (
+        sortedValues[lower] +
+        (sortedValues[upper] - sortedValues[lower]) *
+        (index - lower)
+    );
+};
+
+// Calculate all numerical statistics directly from dataset rows.
+
+const calculateNumericalStatistics = (values) => {
+    if (!values.length) return null;
+
+    const sortedValues = [...values].sort(
+        (a, b) => a - b
+    );
+
+    const sum = values.reduce(
+        (total, value) => total + value,
+        0
+    );
+
+    return {
+        count: values.length,
+        min: sortedValues[0],
+        q1: calculatePercentile(sortedValues, 0.25),
+        median: calculatePercentile(sortedValues, 0.50),
+        q3: calculatePercentile(sortedValues, 0.75),
+        max: sortedValues[sortedValues.length - 1],
+        mean: sum / values.length
+    };
+};
 
 // Create histogram bins.
 
@@ -142,7 +191,6 @@ const createHistogram = (values, binCount = 10) => {
     return bins;
 };
 
-
 // Get the most frequent categorical values.
 
 const getCategoryCounts = (rows, column) => {
@@ -170,7 +218,6 @@ const getCategoryCounts = (rows, column) => {
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 };
-
 
 // Calculate Pearson correlation.
 
@@ -236,7 +283,6 @@ const getCorrelation = (rows, columnA, columnB) => {
     );
 };
 
-
 // Calculate quartiles and outliers.
 
 const getBoxStatistics = (values) => {
@@ -246,29 +292,12 @@ const getBoxStatistics = (values) => {
         (a, b) => a - b
     );
 
-    const percentile = (arr, p) => {
-        const index = (arr.length - 1) * p;
-
-        const lower = Math.floor(index);
-        const upper = Math.ceil(index);
-
-        if (lower === upper) {
-            return arr[lower];
-        }
-
-        return (
-            arr[lower] +
-            (arr[upper] - arr[lower]) *
-            (index - lower)
-        );
-    };
-
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
 
-    const q1 = percentile(sorted, 0.25);
-    const median = percentile(sorted, 0.50);
-    const q3 = percentile(sorted, 0.75);
+    const q1 = calculatePercentile(sorted, 0.25);
+    const median = calculatePercentile(sorted, 0.50);
+    const q3 = calculatePercentile(sorted, 0.75);
 
     const iqr = q3 - q1;
 
@@ -293,11 +322,9 @@ const getBoxStatistics = (values) => {
     };
 };
 
-
 // =====================================================
 // 3. REUSABLE UI COMPONENTS
 // =====================================================
-
 
 // SUMMARY CARD
 
@@ -322,17 +349,14 @@ const SummaryCard = ({
                 hover:border-gray-600
             "
         >
-
             <div className="flex justify-between items-center">
-
                 <p className="text-sm text-gray-950">
                     {title}
                 </p>
 
-                <div className={`rounded-lg p-2 bg-black/70`}>
+                <div className={`rounded-lg p-2 ${color || "bg-black/70"}`}>
                     <Icon size={20} />
                 </div>
-
             </div>
 
             <h2 className="mt-4 text-3xl font-bold text-black">
@@ -342,11 +366,9 @@ const SummaryCard = ({
             <p className="mt-2 text-xs text-gray-950">
                 {description}
             </p>
-
         </div>
     );
 };
-
 
 // CHART CARD
 
@@ -370,8 +392,7 @@ const ChartCard = ({
                 ${className}
             `}
         >
-
-            <h2 className="text-lg md:text-xl font-semibold text-white  p-2 rounded-lg w-fit">
+            <h2 className="text-lg md:text-xl font-semibold text-white p-2 rounded-lg w-fit">
                 {title}
             </h2>
 
@@ -380,11 +401,9 @@ const ChartCard = ({
             </p>
 
             {children}
-
         </div>
     );
 };
-
 
 // SELECT FIELD
 
@@ -396,7 +415,6 @@ const SelectField = ({
 }) => {
     return (
         <div className="flex flex-col gap-2">
-
             <label className="text-sm text-black">
                 {label}
             </label>
@@ -418,7 +436,6 @@ const SelectField = ({
                     focus:border-gray-500
                 "
             >
-
                 {options.map((option) => (
                     <option
                         key={option}
@@ -427,13 +444,10 @@ const SelectField = ({
                         {option}
                     </option>
                 ))}
-
             </select>
-
         </div>
     );
 };
-
 
 // EMPTY CHART
 
@@ -447,7 +461,6 @@ const EmptyChart = ({ message }) => {
                 text-gray-500
             "
         >
-
             <ChartNoAxesColumn
                 size={35}
                 className="mb-3 opacity-50"
@@ -456,11 +469,9 @@ const EmptyChart = ({ message }) => {
             <p className="text-sm">
                 {message}
             </p>
-
         </div>
     );
 };
-
 
 // =====================================================
 // 4. MAIN CHARTS COMPONENT
@@ -493,7 +504,6 @@ const Charts = () => {
 
     const overview = data?.overview;
 
-
     // -------------------------------------
     // EXTRACT DATASET INFORMATION
     // -------------------------------------
@@ -516,10 +526,6 @@ const Charts = () => {
     const columnInformation =
         overview?.column_information || [];
 
-    const describe =
-        overview?.describe || {};
-
-
     // -------------------------------------
     // IDENTIFY DATASET COLUMNS
     // -------------------------------------
@@ -528,31 +534,35 @@ const Charts = () => {
         ? Object.keys(rows[0])
         : [];
 
-
     // NUMERICAL COLUMNS
+    // Identify columns with numeric values.
+    // A small number of invalid/missing values
+    // will not automatically exclude the column.
 
     const numericColumns = useMemo(() => {
         return allColumns.filter((column) => {
 
-            const values = rows
-                .map((row) => row[column])
-                .filter(
-                    (value) =>
-                        value !== null &&
-                        value !== undefined &&
-                        String(value).trim() !== ""
-                );
-
-            return (
-                values.length > 0 &&
-                values.every(
-                    (value) => toNumber(value) !== null
-                )
+            const values = getNumericValues(
+                rows,
+                column
             );
 
+            if (!values.length) return false;
+
+            const nonEmptyValues = rows.filter(
+                (row) =>
+                    row[column] !== null &&
+                    row[column] !== undefined &&
+                    String(row[column]).trim() !== ""
+            );
+
+            // Require at least 80% of non-empty values
+            // to be numeric to identify as numerical.
+            return (
+                values.length / nonEmptyValues.length >= 0.8
+            );
         });
     }, [rows, allColumns]);
-
 
     // CATEGORICAL COLUMNS
 
@@ -562,7 +572,6 @@ const Charts = () => {
                 !numericColumns.includes(column)
         );
     }, [allColumns, numericColumns]);
-
 
     // -------------------------------------
     // STATE MANAGEMENT
@@ -580,40 +589,39 @@ const Charts = () => {
     const [categoryColumn, setCategoryColumn] =
         useState("");
 
-
     // DEFAULT COLUMN SELECTIONS
 
     useEffect(() => {
 
         if (
-            !selectedColumn &&
+            !numericColumns.includes(selectedColumn) &&
             numericColumns.length > 0
         ) {
             setSelectedColumn(numericColumns[0]);
         }
 
         if (
-            !xColumn &&
+            !numericColumns.includes(xColumn) &&
             numericColumns.length > 0
         ) {
             setXColumn(numericColumns[0]);
         }
 
         if (
-            !yColumn &&
+            !numericColumns.includes(yColumn) &&
             numericColumns.length > 1
         ) {
             setYColumn(numericColumns[1]);
 
         } else if (
-            !yColumn &&
+            !numericColumns.includes(yColumn) &&
             numericColumns.length === 1
         ) {
             setYColumn(numericColumns[0]);
         }
 
         if (
-            !categoryColumn &&
+            !categoricalColumns.includes(categoryColumn) &&
             categoricalColumns.length > 0
         ) {
             setCategoryColumn(
@@ -630,7 +638,6 @@ const Charts = () => {
         categoryColumn
     ]);
 
-
     // -------------------------------------
     // MISSING VALUES CHART
     // -------------------------------------
@@ -646,7 +653,6 @@ const Charts = () => {
             (item) =>
                 Number.isFinite(item.missing)
         );
-
 
     // -------------------------------------
     // DATA TYPE DISTRIBUTION
@@ -678,47 +684,52 @@ const Charts = () => {
             })
         );
 
-
     // -------------------------------------
-    // NUMERICAL STATISTICS
+    // NUMERICAL STATISTICS - FIXED
     // -------------------------------------
 
-    const selectedStats =
-        describe[selectedColumn] || {};
+    const selectedStats = useMemo(() => {
 
-    const statisticalChartData = [
-        {
-            statistic: "Minimum",
-            value: selectedStats.min
-        },
-        {
-            statistic: "25%",
-            value: selectedStats["25%"]
-        },
-        {
-            statistic: "Median",
-            value: selectedStats["50%"]
-        },
-        {
-            statistic: "75%",
-            value: selectedStats["75%"]
-        },
-        {
-            statistic: "Maximum",
-            value: selectedStats.max
-        }
-    ]
-        .filter(
+        if (!selectedColumn) return null;
+
+        const values = getNumericValues(
+            rows,
+            selectedColumn
+        );
+
+        return calculateNumericalStatistics(values);
+
+    }, [rows, selectedColumn]);
+
+    const statisticalChartData = selectedStats
+        ? [
+            {
+                statistic: "Minimum",
+                value: selectedStats.min
+            },
+            {
+                statistic: "25%",
+                value: selectedStats.q1
+            },
+            {
+                statistic: "Median",
+                value: selectedStats.median
+            },
+            {
+                statistic: "75%",
+                value: selectedStats.q3
+            },
+            {
+                statistic: "Maximum",
+                value: selectedStats.max
+            }
+        ].filter(
             (item) =>
                 item.value !== null &&
                 item.value !== undefined &&
-                Number.isFinite(Number(item.value))
+                Number.isFinite(item.value)
         )
-        .map((item) => ({
-            ...item,
-            value: Number(item.value)
-        }));
-
+        : [];
 
     // -------------------------------------
     // HISTOGRAM
@@ -736,7 +747,6 @@ const Charts = () => {
         return createHistogram(values, 10);
 
     }, [rows, selectedColumn]);
-
 
     // -------------------------------------
     // SCATTER PLOT
@@ -759,7 +769,6 @@ const Charts = () => {
 
     }, [rows, xColumn, yColumn]);
 
-
     // -------------------------------------
     // CATEGORICAL FREQUENCY
     // -------------------------------------
@@ -774,7 +783,6 @@ const Charts = () => {
         );
 
     }, [rows, categoryColumn]);
-
 
     // -------------------------------------
     // CORRELATION MATRIX
@@ -799,7 +807,6 @@ const Charts = () => {
 
     }, [rows, numericColumns]);
 
-
     // -------------------------------------
     // BOX PLOT STATISTICS
     // -------------------------------------
@@ -817,7 +824,6 @@ const Charts = () => {
 
     }, [rows, selectedColumn]);
 
-
     // -------------------------------------
     // DATASET QUALITY
     // -------------------------------------
@@ -827,7 +833,6 @@ const Charts = () => {
 
     const duplicatePercentage =
         Number(duplicates.percentage || 0);
-
 
     // -------------------------------------
     // NO DATASET HANDLING
@@ -842,7 +847,6 @@ const Charts = () => {
                     bg-black p-6 text-white
                 "
             >
-
                 <div
                     className="
                         rounded-xl
@@ -853,7 +857,6 @@ const Charts = () => {
                         text-center
                     "
                 >
-
                     <AlertCircle
                         size={45}
                         className="mx-auto mb-4 text-red-400"
@@ -866,13 +869,10 @@ const Charts = () => {
                     <p className="mt-3 text-gray-400">
                         Please upload a CSV file first.
                     </p>
-
                 </div>
-
             </div>
         );
     }
-
 
     // =====================================================
     // 5. MAIN DASHBOARD UI
@@ -892,9 +892,7 @@ const Charts = () => {
             }}
         >
 
-            {/* =====================================
-                HEADER
-            ===================================== */}
+            {/* HEADER */}
 
             <div
                 className="
@@ -949,7 +947,6 @@ const Charts = () => {
 
                 </div>
 
-
                 {/* DATASET DIMENSIONS */}
 
                 <div
@@ -984,10 +981,7 @@ const Charts = () => {
 
             </div>
 
-
-            {/* =====================================
-                SUMMARY CARDS
-            ===================================== */}
+            {/* SUMMARY CARDS */}
 
             <div
                 className="
@@ -1041,10 +1035,7 @@ const Charts = () => {
 
             </div>
 
-
-            {/* =====================================
-                ROW 1 - MISSING VALUES + DATA TYPES
-            ===================================== */}
+            {/* ROW 1 - MISSING VALUES + DATA TYPES */}
 
             <div
                 className="
@@ -1120,7 +1111,6 @@ const Charts = () => {
 
                 </ChartCard>
 
-
                 {/* DATA TYPE DISTRIBUTION */}
 
                 <ChartCard
@@ -1182,14 +1172,11 @@ const Charts = () => {
 
             </div>
 
-
-            {/* =====================================
-                NUMERICAL STATISTICAL ANALYSIS
-            ===================================== */}
+            {/* NUMERICAL STATISTICAL ANALYSIS */}
 
             <ChartCard
                 title="Numerical Statistical Analysis"
-                description="Compare minimum, quartiles, median and maximum values."
+                description="Compare minimum, quartiles, median, mean and maximum values."
             >
 
                 {numericColumns.length > 0 ? (
@@ -1207,6 +1194,46 @@ const Charts = () => {
 
                         </div>
 
+                        {/* NUMERICAL SUMMARY CARDS */}
+
+                        {selectedStats && (
+
+                            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+
+                                {[
+                                    ["Count", selectedStats.count],
+                                    ["Mean", selectedStats.mean],
+                                    ["Minimum", selectedStats.min],
+                                    ["Q1 (25%)", selectedStats.q1],
+                                    ["Median", selectedStats.median],
+                                    ["Q3 (75%)", selectedStats.q3]
+                                ].map(([label, value]) => (
+
+                                    <div
+                                        key={label}
+                                        className="rounded-lg border border-[#292929] bg-black/30 p-4"
+                                    >
+
+                                        <p className="text-xs text-gray-400">
+                                            {label}
+                                        </p>
+
+                                        <p className="mt-2 text-lg font-semibold text-white">
+                                            {Number(value).toLocaleString(
+                                                undefined,
+                                                {
+                                                    maximumFractionDigits: 3
+                                                }
+                                            )}
+                                        </p>
+
+                                    </div>
+
+                                ))}
+
+                            </div>
+
+                        )}
 
                         {statisticalChartData.length > 0 ? (
 
@@ -1253,7 +1280,7 @@ const Charts = () => {
 
                         ) : (
                             <EmptyChart
-                                message="Statistical information is unavailable."
+                                message="Could not calculate statistics for this column."
                             />
                         )}
 
@@ -1267,10 +1294,7 @@ const Charts = () => {
 
             </ChartCard>
 
-
-            {/* =====================================
-                HISTOGRAM + SCATTER PLOT
-            ===================================== */}
+            {/* HISTOGRAM + SCATTER PLOT */}
 
             <div
                 className="
@@ -1358,7 +1382,6 @@ const Charts = () => {
 
                 </ChartCard>
 
-
                 {/* SCATTER PLOT */}
 
                 <ChartCard
@@ -1393,7 +1416,6 @@ const Charts = () => {
                                 />
 
                             </div>
-
 
                             {scatterData.length > 0 ? (
 
@@ -1464,15 +1486,11 @@ const Charts = () => {
 
             </div>
 
-
-            {/* =====================================
-                CATEGORICAL FREQUENCY
-            ===================================== */}
+            {/* CATEGORICAL FREQUENCY */}
 
             <ChartCard
                 title="Categorical Frequency Analysis"
                 description="Explore the ten most frequent values in a categorical column."
-                className=""
             >
 
                 {categoricalColumns.length > 0 ? (
@@ -1489,7 +1507,6 @@ const Charts = () => {
                             />
 
                         </div>
-
 
                         {categoryData.length > 0 ? (
 
@@ -1556,19 +1573,16 @@ const Charts = () => {
 
             </ChartCard>
 
-
-            {/* =====================================
-                CORRELATION HEATMAP
-            ===================================== */}
+            {/* CORRELATION HEATMAP */}
 
             <ChartCard
                 title="Correlation Heatmap"
                 description="Explore positive and negative relationships between numerical columns."
-             >
+            >
 
                 {numericColumns.length > 0 ? (
 
-                    <div className="overflow-x-auto ">
+                    <div className="overflow-x-auto">
 
                         <table className="min-w-max w-full text-sm text-center border-collapse">
 
@@ -1609,7 +1623,6 @@ const Charts = () => {
 
                             </thead>
 
-
                             <tbody>
 
                                 {correlationData.map(
@@ -1628,7 +1641,6 @@ const Charts = () => {
                                             >
                                                 {row.column}
                                             </th>
-
 
                                             {row.values.map(
                                                 (value, index) => {
@@ -1688,7 +1700,6 @@ const Charts = () => {
                     />
                 )}
 
-
                 {/* CORRELATION LEGEND */}
 
                 <div
@@ -1717,10 +1728,7 @@ const Charts = () => {
 
             </ChartCard>
 
-
-            {/* =====================================
-                BOX PLOT / OUTLIER ANALYSIS
-            ===================================== */}
+            {/* BOX PLOT / OUTLIER ANALYSIS */}
 
             <ChartCard
                 title="Box Plot & Outlier Analysis"
@@ -1787,7 +1795,6 @@ const Charts = () => {
 
                         </div>
 
-
                         {/* BOX PLOT VISUALIZATION */}
 
                         <div
@@ -1827,7 +1834,6 @@ const Charts = () => {
 
                             </div>
 
-
                             {/* SCALE */}
 
                             <div className="mt-7">
@@ -1849,7 +1855,6 @@ const Charts = () => {
 
                                 </div>
 
-
                                 {/* BOX PLOT */}
 
                                 <div className="relative flex h-12 items-center">
@@ -1860,7 +1865,6 @@ const Charts = () => {
                                             h-0.5 bg-gray-700
                                         "
                                     />
-
 
                                     {/* IQR BOX */}
 
@@ -1892,7 +1896,6 @@ const Charts = () => {
                                         }}
                                     />
 
-
                                     {/* MEDIAN */}
 
                                     <div
@@ -1912,7 +1915,6 @@ const Charts = () => {
                                         }}
                                     />
 
-
                                     {/* MINIMUM */}
 
                                     <div
@@ -1921,7 +1923,6 @@ const Charts = () => {
                                             h-4 w-0.5 bg-gray-300
                                         "
                                     />
-
 
                                     {/* MAXIMUM */}
 
@@ -1933,7 +1934,6 @@ const Charts = () => {
                                     />
 
                                 </div>
-
 
                                 {/* LEGEND */}
 
@@ -1977,7 +1977,6 @@ const Charts = () => {
 
                         </div>
 
-
                         {/* IQR + OUTLIER CARDS */}
 
                         <div
@@ -2007,7 +2006,6 @@ const Charts = () => {
 
                             </div>
 
-
                             <div
                                 className="
                                     rounded-xl
@@ -2030,7 +2028,6 @@ const Charts = () => {
 
                         </div>
 
-
                         <p className="mt-4 text-xs text-gray-500">
                             Outliers are identified using the
                             1.5 × IQR rule. This indicates
@@ -2048,10 +2045,7 @@ const Charts = () => {
 
             </ChartCard>
 
-
-            {/* =====================================
-                DATASET QUALITY INFORMATION
-            ===================================== */}
+            {/* DATASET QUALITY INFORMATION */}
 
             <ChartCard
                 title="Dataset Quality Information"
@@ -2093,7 +2087,6 @@ const Charts = () => {
                             {missingPercentage}%
                         </h2>
 
-
                         {/* PROGRESS BAR */}
 
                         <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
@@ -2114,7 +2107,6 @@ const Charts = () => {
                         </div>
 
                     </div>
-
 
                     {/* DUPLICATES */}
 
@@ -2144,7 +2136,6 @@ const Charts = () => {
                             {duplicatePercentage}%
                         </h2>
 
-
                         {/* PROGRESS BAR */}
 
                         <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
@@ -2170,10 +2161,7 @@ const Charts = () => {
 
             </ChartCard>
 
-
-            {/* =====================================
-                FOOTER
-            ===================================== */}
+            {/* FOOTER */}
 
             <div className="border-t border-[#252525] pt-5">
 
@@ -2184,7 +2172,6 @@ const Charts = () => {
             </div>
 
         </div>
-
     );
 };
 
