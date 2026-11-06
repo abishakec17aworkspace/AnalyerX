@@ -1,5 +1,12 @@
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { toPng, toJpeg, toSvg } from "html-to-image";
+import jsPDF from "jspdf";
+
+import {
+    Download,
+    ChevronDown
+} from "lucide-react";
 
 import {
     ResponsiveContainer,
@@ -93,6 +100,151 @@ const getNumericValues = (rows, column) => {
     return rows
         .map((row) => toNumber(row[column]))
         .filter((value) => value !== null);
+};
+
+
+// Download a generated data URL.
+const downloadFile = (data, filename) => {
+    const link = document.createElement("a");
+    link.href = data;
+    link.download = filename;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
+// Export one chart in the selected format.
+const downloadSingleChart = async (chartElement, chartTitle, format) => {
+    if (!chartElement) return;
+
+    const options = {
+        backgroundColor: "#0b0b0b",
+        pixelRatio: 3,
+        filter: (node) => !node?.dataset?.exportIgnore
+    };
+
+    const fileName = chartTitle
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+
+    let image;
+
+    try {
+        switch (format) {
+            case "PNG":
+                image = await toPng(chartElement, options);
+                downloadFile(image, `${fileName}.png`);
+                break;
+
+            case "JPG":
+                image = await toJpeg(chartElement, {
+                    ...options,
+                    quality: 0.95
+                });
+                downloadFile(image, `${fileName}.jpg`);
+                break;
+
+            case "SVG":
+                image = await toSvg(chartElement, options);
+                downloadFile(image, `${fileName}.svg`);
+                break;
+
+            case "PDF": {
+                image = await toPng(chartElement, options);
+
+                const pdf = new jsPDF("l", "mm", "a4");
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const properties = pdf.getImageProperties(image);
+                const margin = 10;
+
+                const scale = Math.min(
+                    (pageWidth - margin * 2) / properties.width,
+                    (pageHeight - margin * 2) / properties.height
+                );
+
+                const width = properties.width * scale;
+                const height = properties.height * scale;
+
+                pdf.addImage(
+                    image,
+                    "PNG",
+                    (pageWidth - width) / 2,
+                    (pageHeight - height) / 2,
+                    width,
+                    height
+                );
+
+                pdf.save(`${fileName}.pdf`);
+                break;
+            }
+
+            default:
+                throw new Error(`Unsupported export format: ${format}`);
+        }
+    } catch (error) {
+        console.error("Chart export failed:", error);
+        throw error;
+    }
+};
+
+const downloadAllCharts = async () => {
+    try {
+        const chartElements = document.querySelectorAll(".export-chart-card");
+
+        if (chartElements.length === 0) {
+            alert("No charts available to download.");
+            return;
+        }
+
+        const pdf = new jsPDF("p", "mm", "a4");
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+
+        const margin = 10;
+
+        for (let i = 0; i < chartElements.length; i++) {
+
+            const chart = chartElements[i];
+
+            const image = await toPng(chart, {
+                backgroundColor: "#0b0b0b",
+                pixelRatio: 2,
+                filter: (node) => !node?.dataset?.exportIgnore
+            });
+
+            const imageProperties = pdf.getImageProperties(image);
+
+            const imageWidth = pdfWidth - margin * 2;
+
+            const imageHeight =
+                (imageProperties.height * imageWidth) /
+                imageProperties.width;
+
+            if (i > 0) {
+                pdf.addPage();
+            }
+
+            pdf.addImage(
+                image,
+                "PNG",
+                margin,
+                margin,
+                imageWidth,
+                Math.min(imageHeight, pdfHeight - margin * 2)
+            );
+        }
+
+        pdf.save("AnalyzerX_Charts_Report.pdf");
+
+    } catch (error) {
+
+        console.error("Chart download failed:", error);
+
+        alert("Unable to download charts. Please try again.");
+    }
 };
 
 // Calculate percentile using interpolation.
@@ -370,18 +522,41 @@ const SummaryCard = ({
     );
 };
 
-// CHART CARD
-
+// CHART CARD WITH INDIVIDUAL EXPORT OPTIONS
 const ChartCard = ({
     title,
     description,
     children,
     className = ""
 }) => {
+    const chartRef = useRef(null);
+    const [format, setFormat] = useState("PNG");
+    const [downloading, setDownloading] = useState(false);
+
+    const handleDownload = async () => {
+        if (downloading) return;
+
+        setDownloading(true);
+
+        try {
+            await downloadSingleChart(
+                chartRef.current,
+                title,
+                format
+            );
+        } catch (error) {
+            alert("Unable to export chart. Please try again.");
+        } finally {
+            setDownloading(false);
+        }
+    };
+
     return (
         <div
+            ref={chartRef}
             className={`
                 min-w-0
+                export-chart-card
                 rounded-xl
                 border border-[#252525]
                 bg-[#0b0b0b81]
@@ -392,9 +567,66 @@ const ChartCard = ({
                 ${className}
             `}
         >
-            <h2 className="text-lg md:text-xl font-semibold text-white p-2 rounded-lg w-fit">
-                {title}
-            </h2>
+            <div className="
+                flex flex-col gap-3
+                md:flex-row md:items-center md:justify-between
+            ">
+                <h2 className="text-lg md:text-xl font-semibold text-white p-2 rounded-lg w-fit">
+                    {title}
+                </h2>
+
+                <div
+                    data-export-ignore="true"
+                    className="flex items-center gap-2"
+                >
+                    <div className="relative">
+                        <select
+                            value={format}
+                            onChange={(event) => setFormat(event.target.value)}
+                            aria-label={`Export format for ${title}`}
+                            className="
+                                appearance-none
+                                rounded-lg border border-[#383838]
+                                bg-[#111111] text-gray-300 text-sm
+                                px-3 py-2 pr-9 outline-none
+                                focus:border-indigo-500 cursor-pointer
+                            "
+                        >
+                            <option value="PNG">PNG</option>
+                            <option value="JPG">JPG</option>
+                            <option value="SVG">SVG</option>
+                            <option value="PDF">PDF</option>
+                        </select>
+
+                        <ChevronDown
+                            size={15}
+                            className="
+                                absolute right-3 top-1/2
+                                -translate-y-1/2 text-gray-400
+                                pointer-events-none
+                            "
+                        />
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={handleDownload}
+                        disabled={downloading}
+                        className="
+                            flex items-center gap-2
+                            rounded-lg bg-indigo-600
+                            hover:bg-indigo-700
+                            disabled:opacity-50
+                            px-4 py-2 text-sm
+                            font-semibold text-white
+                            transition whitespace-nowrap
+                        "
+                    >
+                        <Download size={16} />
+                        {downloading ? "Exporting..." : "Download"}
+                    </button>
+                </div>
+            </div>
 
             <p className="mt-2 mb-6 pl-2 text-sm text-slate-300">
                 {description}
@@ -1486,249 +1718,7 @@ const Charts = () => {
 
             </div>
 
-            {/* CATEGORICAL FREQUENCY */}
-
-            <ChartCard
-                title="Categorical Frequency Analysis"
-                description="Explore the ten most frequent values in a categorical column."
-            >
-
-                {categoricalColumns.length > 0 ? (
-
-                    <>
-
-                        <div className="mb-5">
-
-                            <SelectField
-                                label="Select Categorical Column"
-                                value={categoryColumn}
-                                onChange={setCategoryColumn}
-                                options={categoricalColumns}
-                            />
-
-                        </div>
-
-                        {categoryData.length > 0 ? (
-
-                            <ResponsiveContainer
-                                width="100%"
-                                height={350}
-                            >
-
-                                <BarChart
-                                    data={categoryData}
-                                    margin={{
-                                        top: 10,
-                                        right: 10,
-                                        left: 0,
-                                        bottom: 10
-                                    }}
-                                >
-
-                                    <CartesianGrid {...GRID_STYLE} />
-
-                                    <XAxis
-                                        dataKey="name"
-                                        {...AXIS_STYLE}
-                                        angle={-25}
-                                        textAnchor="end"
-                                        height={80}
-                                    />
-
-                                    <YAxis
-                                        {...AXIS_STYLE}
-                                        allowDecimals={false}
-                                    />
-
-                                    <Tooltip
-                                        contentStyle={TOOLTIP_STYLE}
-                                    />
-
-                                    <Legend />
-
-                                    <Bar
-                                        dataKey="count"
-                                        name="Frequency"
-                                        fill="#10b981"
-                                        radius={[5, 5, 0, 0]}
-                                    />
-
-                                </BarChart>
-
-                            </ResponsiveContainer>
-
-                        ) : (
-                            <EmptyChart
-                                message="No category values available."
-                            />
-                        )}
-
-                    </>
-
-                ) : (
-                    <EmptyChart
-                        message="No categorical columns detected."
-                    />
-                )}
-
-            </ChartCard>
-
-            {/* CORRELATION HEATMAP */}
-
-            <ChartCard
-                title="Correlation Heatmap"
-                description="Explore positive and negative relationships between numerical columns."
-            >
-
-                {numericColumns.length > 0 ? (
-
-                    <div className="overflow-x-auto">
-
-                        <table className="min-w-max w-full text-sm text-center border-collapse">
-
-                            <thead>
-
-                                <tr className="bg-[#141414]">
-
-                                    <th
-                                        className="
-                                            border border-[#292929]
-                                            p-4 text-left
-                                            text-xs font-semibold
-                                            uppercase tracking-wider
-                                            text-gray-400
-                                        "
-                                    >
-                                        Column
-                                    </th>
-
-                                    {numericColumns.map(
-                                        (column) => (
-                                            <th
-                                                key={column}
-                                                className="
-                                                    border border-[#292929]
-                                                    p-4
-                                                    text-xs font-semibold
-                                                    uppercase tracking-wider
-                                                    text-gray-400
-                                                "
-                                            >
-                                                {column}
-                                            </th>
-                                        )
-                                    )}
-
-                                </tr>
-
-                            </thead>
-
-                            <tbody>
-
-                                {correlationData.map(
-                                    (row) => (
-
-                                        <tr key={row.column}>
-
-                                            <th
-                                                className="
-                                                    border border-[#292929]
-                                                    bg-[#111111]
-                                                    p-4 text-left
-                                                    font-medium
-                                                    text-gray-300
-                                                "
-                                            >
-                                                {row.column}
-                                            </th>
-
-                                            {row.values.map(
-                                                (value, index) => {
-
-                                                    const intensity =
-                                                        value === null
-                                                            ? 0
-                                                            : Math.abs(value);
-
-                                                    const background =
-                                                        value === null
-                                                            ? "#292929"
-                                                            : value >= 0
-                                                                ? `rgba(16, 185, 129, ${0.15 + intensity * 0.75})`
-                                                                : `rgba(239, 68, 68, ${0.15 + intensity * 0.75})`;
-
-                                                    return (
-
-                                                        <td
-                                                            key={`${row.column}-${numericColumns[index]}`}
-                                                            className="
-                                                                border border-[#292929]
-                                                                p-4 font-semibold
-                                                                text-white
-                                                            "
-                                                            style={{
-                                                                backgroundColor:
-                                                                    background
-                                                            }}
-                                                        >
-
-                                                            {value === null
-                                                                ? "N/A"
-                                                                : value.toFixed(2)}
-
-                                                        </td>
-
-                                                    );
-
-                                                }
-                                            )}
-
-                                        </tr>
-
-                                    )
-                                )}
-
-                            </tbody>
-
-                        </table>
-
-                    </div>
-
-                ) : (
-                    <EmptyChart
-                        message="No numerical columns available for correlation analysis."
-                    />
-                )}
-
-                {/* CORRELATION LEGEND */}
-
-                <div
-                    className="
-                        flex flex-wrap gap-5
-                        mt-6 text-xs text-gray-400
-                    "
-                >
-
-                    <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded bg-emerald-500" />
-                        Positive correlation
-                    </span>
-
-                    <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded bg-red-500" />
-                        Negative correlation
-                    </span>
-
-                    <span className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded bg-gray-600" />
-                        Not available
-                    </span>
-
-                </div>
-
-            </ChartCard>
-
-            {/* BOX PLOT / OUTLIER ANALYSIS */}
+             {/* BOX PLOT / OUTLIER ANALYSIS */}
 
             <ChartCard
                 title="Box Plot & Outlier Analysis"
@@ -2045,6 +2035,249 @@ const Charts = () => {
 
             </ChartCard>
 
+            {/* CATEGORICAL FREQUENCY */}
+
+            <ChartCard
+                title="Categorical Frequency Analysis"
+                description="Explore the ten most frequent values in a categorical column."
+            >
+
+                {categoricalColumns.length > 0 ? (
+
+                    <>
+
+                        <div className="mb-5">
+
+                            <SelectField
+                                label="Select Categorical Column"
+                                value={categoryColumn}
+                                onChange={setCategoryColumn}
+                                options={categoricalColumns}
+                            />
+
+                        </div>
+
+                        {categoryData.length > 0 ? (
+
+                            <ResponsiveContainer
+                                width="100%"
+                                height={350}
+                            >
+
+                                <BarChart
+                                    data={categoryData}
+                                    margin={{
+                                        top: 10,
+                                        right: 10,
+                                        left: 0,
+                                        bottom: 10
+                                    }}
+                                >
+
+                                    <CartesianGrid {...GRID_STYLE} />
+
+                                    <XAxis
+                                        dataKey="name"
+                                        {...AXIS_STYLE}
+                                        angle={-25}
+                                        textAnchor="end"
+                                        height={80}
+                                    />
+
+                                    <YAxis
+                                        {...AXIS_STYLE}
+                                        allowDecimals={false}
+                                    />
+
+                                    <Tooltip
+                                        contentStyle={TOOLTIP_STYLE}
+                                    />
+
+                                    <Legend />
+
+                                    <Bar
+                                        dataKey="count"
+                                        name="Frequency"
+                                        fill="#10b981"
+                                        radius={[5, 5, 0, 0]}
+                                    />
+
+                                </BarChart>
+
+                            </ResponsiveContainer>
+
+                        ) : (
+                            <EmptyChart
+                                message="No category values available."
+                            />
+                        )}
+
+                    </>
+
+                ) : (
+                    <EmptyChart
+                        message="No categorical columns detected."
+                    />
+                )}
+
+            </ChartCard>
+
+            {/* CORRELATION HEATMAP */}
+
+            <ChartCard
+                title="Correlation Heatmap"
+                description="Explore positive and negative relationships between numerical columns."
+            >
+
+                {numericColumns.length > 0 ? (
+
+                    <div className="overflow-x-auto">
+
+                        <table className="min-w-max w-full text-sm text-center border-collapse">
+
+                            <thead>
+
+                                <tr className="bg-[#141414]">
+
+                                    <th
+                                        className="
+                                            border border-[#292929]
+                                            p-4 text-left
+                                            text-xs font-semibold
+                                            uppercase tracking-wider
+                                            text-gray-400
+                                        "
+                                    >
+                                        Column
+                                    </th>
+
+                                    {numericColumns.map(
+                                        (column) => (
+                                            <th
+                                                key={column}
+                                                className="
+                                                    border border-[#292929]
+                                                    p-4
+                                                    text-xs font-semibold
+                                                    uppercase tracking-wider
+                                                    text-gray-400
+                                                "
+                                            >
+                                                {column}
+                                            </th>
+                                        )
+                                    )}
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody>
+
+                                {correlationData.map(
+                                    (row) => (
+
+                                        <tr key={row.column}>
+
+                                            <th
+                                                className="
+                                                    border border-[#292929]
+                                                    bg-[#111111]
+                                                    p-4 text-left
+                                                    font-medium
+                                                    text-gray-300
+                                                "
+                                            >
+                                                {row.column}
+                                            </th>
+
+                                            {row.values.map(
+                                                (value, index) => {
+
+                                                    const intensity =
+                                                        value === null
+                                                            ? 0
+                                                            : Math.abs(value);
+
+                                                    const background =
+                                                        value === null
+                                                            ? "#292929"
+                                                            : value >= 0
+                                                                ? `rgba(16, 185, 129, ${0.15 + intensity * 0.75})`
+                                                                : `rgba(239, 68, 68, ${0.15 + intensity * 0.75})`;
+
+                                                    return (
+
+                                                        <td
+                                                            key={`${row.column}-${numericColumns[index]}`}
+                                                            className="
+                                                                border border-[#292929]
+                                                                p-4 font-semibold
+                                                                text-white
+                                                            "
+                                                            style={{
+                                                                backgroundColor:
+                                                                    background
+                                                            }}
+                                                        >
+
+                                                            {value === null
+                                                                ? "N/A"
+                                                                : value.toFixed(2)}
+
+                                                        </td>
+
+                                                    );
+
+                                                }
+                                            )}
+
+                                        </tr>
+
+                                    )
+                                )}
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                ) : (
+                    <EmptyChart
+                        message="No numerical columns available for correlation analysis."
+                    />
+                )}
+
+                {/* CORRELATION LEGEND */}
+
+                <div
+                    className="
+                        flex flex-wrap gap-5
+                        mt-6 text-xs text-gray-400
+                    "
+                >
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-emerald-500" />
+                        Positive correlation
+                    </span>
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-red-500" />
+                        Negative correlation
+                    </span>
+
+                    <span className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded bg-gray-600" />
+                        Not available
+                    </span>
+
+                </div>
+
+            </ChartCard>
+
+           
             {/* DATASET QUALITY INFORMATION */}
 
             <ChartCard
@@ -2164,6 +2397,20 @@ const Charts = () => {
             {/* FOOTER */}
 
             <div className="border-t border-[#252525] pt-5">
+
+                <div className="mt-5">
+    <button
+        onClick={downloadAllCharts}
+        className="flex items-center gap-3 rounded-xl
+        bg-indigo-600 hover:bg-indigo-700
+        px-5 py-3 text-white font-semibold
+        shadow-lg transition-all duration-300"
+    >
+        <Download size={20} />
+
+        Download All Charts
+    </button>
+</div>
 
                 <p className="text-center text-xs text-gray-500">
                     AnalyzerX | Dataset Visualization Dashboard
