@@ -1,116 +1,218 @@
 
 import pandas as pd
+import numpy as np
+import re
 
+
+# ==========================================
+# 1. NORMALIZE COLUMN NAMES
+# ==========================================
 
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    cleaned_df = df.copy(deep=True)
 
-    normalized_columns = (
-        cleaned_df.columns.astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace(r"\s+", "_", regex=True)
-        .str.replace(r"[^a-z0-9_]", "", regex=True)
-    )
+    df = df.copy()
 
-    # Avoid silently overwriting columns with the same normalized name.
-    if normalized_columns.duplicated().any():
-        raise ValueError(
-            "Column names conflict after normalization. "
-            "Rename the conflicting columns before processing."
-        )
+    normalized_columns = []
 
-    cleaned_df.columns = normalized_columns
+    for column in df.columns:
 
-    if any(not column for column in cleaned_df.columns):
-        raise ValueError(
-            "A column name became empty after normalization."
-        )
+        name = str(column).strip().lower()
 
-    return cleaned_df
+        name = re.sub(r"[^\w]+", "_", name)
+
+        name = re.sub(r"_+", "_", name)
+
+        name = name.strip("_")
+
+        normalized_columns.append(name)
+
+    # Prevent duplicate column names after normalization
+    counts = {}
+    unique_columns = []
+
+    for name in normalized_columns:
+
+        counts[name] = counts.get(name, 0) + 1
+
+        if counts[name] > 1:
+            name = f"{name}_{counts[name]}"
+
+        unique_columns.append(name)
+
+    df.columns = unique_columns
+
+    return df
 
 
-def remove_duplicate_rows(df: pd.DataFrame) -> pd.DataFrame:
-    return df.drop_duplicates().copy()
+# ==========================================
+# 2. FILL MISSING VALUES
+# ==========================================
 
-
-def handle_missing_values(
+def apply_missing_rule(
     df: pd.DataFrame,
-    strategy: str = "keep"
+    column: str,
+    strategy: str,
+    custom_value=None
 ) -> pd.DataFrame:
 
-    cleaned_df = df.copy(deep=True)
+    if column not in df.columns:
+        raise KeyError(f"Column '{column}' not found.")
 
     if strategy == "keep":
-        return cleaned_df
+        return df
 
     if strategy == "drop_rows":
-        return cleaned_df.dropna().copy()
 
-    if strategy == "fill_numeric_median":
-        numeric_columns = cleaned_df.select_dtypes(
-            include="number"
-        ).columns
+        return df.dropna(subset=[column]).copy()
 
-        for column in numeric_columns:
-            median_value = cleaned_df[column].median()
+    if strategy == "fill_mean":
 
-            if pd.notna(median_value):
-                cleaned_df[column] = (
-                    cleaned_df[column].fillna(median_value)
-                )
+        if not pd.api.types.is_numeric_dtype(df[column]):
+            raise ValueError(
+                f"Mean can only be applied to numeric column '{column}'."
+            )
 
-        return cleaned_df
+        value = df[column].mean()
 
-    if strategy == "fill_numeric_mean":
-        numeric_columns = cleaned_df.select_dtypes(
-            include="number"
-        ).columns
+        if pd.notna(value):
+            df[column] = df[column].fillna(value)
 
-        for column in numeric_columns:
-            mean_value = cleaned_df[column].mean()
+        return df
 
-            if pd.notna(mean_value):
-                cleaned_df[column] = (
-                    cleaned_df[column].fillna(mean_value)
-                )
+    if strategy == "fill_median":
 
-        return cleaned_df
+        if not pd.api.types.is_numeric_dtype(df[column]):
+            raise ValueError(
+                f"Median can only be applied to numeric column '{column}'."
+            )
+
+        value = df[column].median()
+
+        if pd.notna(value):
+            df[column] = df[column].fillna(value)
+
+        return df
 
     if strategy == "fill_mode":
-        for column in cleaned_df.columns:
-            modes = cleaned_df[column].mode(dropna=True)
 
-            if not modes.empty:
-                cleaned_df[column] = (
-                    cleaned_df[column].fillna(modes.iloc[0])
+        mode_values = df[column].mode(dropna=True)
+
+        if not mode_values.empty:
+            df[column] = df[column].fillna(mode_values.iloc[0])
+
+        return df
+
+    if strategy == "fill_custom":
+
+        if custom_value is None:
+            raise ValueError(
+                f"Custom value is required for column '{column}'."
+            )
+
+        value = custom_value
+
+        if pd.api.types.is_numeric_dtype(df[column]):
+
+            try:
+                value = pd.to_numeric(value)
+
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Custom value for '{column}' must be numeric."
                 )
 
-        return cleaned_df
+        df[column] = df[column].fillna(value)
+
+        return df
 
     raise ValueError(
-        "Unsupported missing-value strategy."
+        f"Unsupported missing-value strategy: {strategy}"
     )
 
+
+# ==========================================
+# 3. PROCESS DATASET
+# ==========================================
 
 def process_dataset(
-    df: pd.DataFrame,
-    normalize_columns: bool = True,
+    original_df: pd.DataFrame,
+    missing_rules: dict = None,
+    custom_values: dict = None,
     remove_duplicates: bool = True,
-    missing_strategy: str = "keep"
+    normalize_columns: bool = True
 ) -> pd.DataFrame:
 
-    processed_df = df.copy(deep=True)
+    if not isinstance(original_df, pd.DataFrame):
+        raise TypeError("Input must be a Pandas DataFrame.")
+
+    if original_df.empty:
+        raise ValueError("Cannot process an empty dataset.")
+
+    # Preserve original dataset
+    df = original_df.copy(deep=True)
+
+    missing_rules = missing_rules or {}
+    custom_values = custom_values or {}
+
+    # ======================================
+    # STEP 1: NORMALIZE COLUMN NAMES
+    # ======================================
 
     if normalize_columns:
-        processed_df = normalize_column_names(processed_df)
+        df = normalize_column_names(df)
 
-    processed_df = handle_missing_values(
-        processed_df,
-        strategy=missing_strategy
-    )
+    # ======================================
+    # STEP 2: APPLY COLUMN-WISE RULES
+    # ======================================
+
+    for column, strategy in missing_rules.items():
+
+        # Frontend sends normalized column names.
+        # When normalization is disabled, also
+        # support matching the original column name.
+
+        if column not in df.columns:
+
+            if normalize_columns:
+                raise KeyError(
+                    f"Configured column '{column}' not found."
+                )
+
+            matching_columns = [
+                col for col in df.columns
+                if str(col).strip().lower() ==
+                str(column).strip().lower()
+            ]
+
+            if not matching_columns:
+                raise KeyError(
+                    f"Configured column '{column}' not found."
+                )
+
+            actual_column = matching_columns[0]
+
+        else:
+            actual_column = column
+
+        df = apply_missing_rule(
+            df=df,
+            column=actual_column,
+            strategy=strategy,
+            custom_value=custom_values.get(column)
+        )
+
+    # ======================================
+    # STEP 3: REMOVE DUPLICATES
+    # ======================================
 
     if remove_duplicates:
-        processed_df = remove_duplicate_rows(processed_df)
 
-    return processed_df
+        df = df.drop_duplicates().copy()
+
+    # ======================================
+    # STEP 4: RESET INDEX
+    # ======================================
+
+    df = df.reset_index(drop=True)
+
+    return df

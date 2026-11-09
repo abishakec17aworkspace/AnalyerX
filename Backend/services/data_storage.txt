@@ -1,0 +1,379 @@
+from uuid import uuid4
+from dataclasses import dataclass, field
+from threading import RLock
+
+import pandas as pd
+
+
+# ==========================================
+# DATASET STATE
+# ==========================================
+
+@dataclass
+class DatasetState:
+
+    original_df: pd.DataFrame
+
+    working_df: pd.DataFrame
+
+    preview_df: pd.DataFrame | None = None
+
+    undo_history: list = field(default_factory=list)
+
+    redo_history: list = field(default_factory=list)
+
+    version: int = 0
+
+
+# ==========================================
+# DATASET STORAGE
+# ==========================================
+
+datasets: dict[str, DatasetState] = {}
+
+storage_lock = RLock()
+
+MAX_HISTORY = 10
+
+
+# ==========================================
+# 1. STORE DATASET
+# ==========================================
+
+def store_dataset(df: pd.DataFrame) -> str:
+
+    dataset_id = str(uuid4())
+
+    with storage_lock:
+
+        datasets[dataset_id] = DatasetState(
+
+            original_df=df.copy(deep=True),
+
+            working_df=df.copy(deep=True)
+
+        )
+
+    return dataset_id
+
+
+# ==========================================
+# 2. GET WORKING DATASET
+# ==========================================
+
+def get_dataset(dataset_id: str) -> pd.DataFrame:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found in storage.")
+
+        return datasets[dataset_id].working_df.copy(deep=True)
+
+
+# ==========================================
+# 3. GET ORIGINAL DATASET
+# ==========================================
+
+def get_original_dataset(dataset_id: str) -> pd.DataFrame:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        return datasets[dataset_id].original_df.copy(deep=True)
+
+
+# ==========================================
+# 4. UPDATE WORKING DATASET
+# ==========================================
+
+def update_dataset(
+    dataset_id: str,
+    df: pd.DataFrame
+) -> None:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        # Save current version for undo
+        state.undo_history.append(
+            state.working_df.copy(deep=True)
+        )
+
+        # Limit history size
+        if len(state.undo_history) > MAX_HISTORY:
+
+            state.undo_history.pop(0)
+
+        # Apply new dataset
+        state.working_df = df.copy(deep=True)
+
+        # Clear redo history
+        state.redo_history.clear()
+
+        # Clear old preview
+        state.preview_df = None
+
+        state.version += 1
+
+
+# ==========================================
+# 5. SAVE CLEANING PREVIEW
+# ==========================================
+
+def save_preview(
+    dataset_id: str,
+    df: pd.DataFrame
+) -> None:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        datasets[dataset_id].preview_df = (
+            df.copy(deep=True)
+        )
+
+
+# ==========================================
+# 6. GET PREVIEW DATASET
+# ==========================================
+
+def get_preview(dataset_id: str) -> pd.DataFrame:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        preview = datasets[dataset_id].preview_df
+
+        if preview is None:
+
+            raise ValueError("No cleaning preview available.")
+
+        return preview.copy(deep=True)
+
+
+# ==========================================
+# 7. APPLY CLEANING PREVIEW
+# ==========================================
+
+def apply_preview(dataset_id: str) -> None:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        if state.preview_df is None:
+
+            raise ValueError("No preview available to apply.")
+
+        # Save previous working version
+        state.undo_history.append(
+            state.working_df.copy(deep=True)
+        )
+
+        if len(state.undo_history) > MAX_HISTORY:
+
+            state.undo_history.pop(0)
+
+        # Commit preview
+        state.working_df = state.preview_df.copy(deep=True)
+
+        # Clear temporary preview
+        state.preview_df = None
+
+        # Clear redo history
+        state.redo_history.clear()
+
+        state.version += 1
+
+
+# ==========================================
+# 8. DISCARD PREVIEW
+# ==========================================
+
+def discard_preview(dataset_id: str) -> None:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        datasets[dataset_id].preview_df = None
+
+
+# ==========================================
+# 9. UNDO OPERATION
+# ==========================================
+
+def undo_dataset(dataset_id: str) -> bool:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        if not state.undo_history:
+
+            return False
+
+        state.redo_history.append(
+            state.working_df.copy(deep=True)
+        )
+
+        state.working_df = state.undo_history.pop()
+
+        state.preview_df = None
+
+        state.version += 1
+
+        return True
+
+
+# ==========================================
+# 10. REDO OPERATION
+# ==========================================
+
+def redo_dataset(dataset_id: str) -> bool:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        if not state.redo_history:
+
+            return False
+
+        state.undo_history.append(
+            state.working_df.copy(deep=True)
+        )
+
+        if len(state.undo_history) > MAX_HISTORY:
+
+            state.undo_history.pop(0)
+
+        state.working_df = state.redo_history.pop()
+
+        state.preview_df = None
+
+        state.version += 1
+
+        return True
+
+
+# ==========================================
+# 11. RESET TO ORIGINAL DATASET
+# ==========================================
+
+def reset_dataset(dataset_id: str) -> None:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        state.undo_history.append(
+            state.working_df.copy(deep=True)
+        )
+
+        if len(state.undo_history) > MAX_HISTORY:
+
+            state.undo_history.pop(0)
+
+        state.working_df = state.original_df.copy(deep=True)
+
+        state.preview_df = None
+
+        state.redo_history.clear()
+
+        state.version += 1
+
+
+# ==========================================
+# 12. DATASET INFORMATION
+# ==========================================
+
+def get_dataset_info(dataset_id: str) -> dict:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            raise KeyError("Dataset not found.")
+
+        state = datasets[dataset_id]
+
+        return {
+
+            "dataset_id": dataset_id,
+
+            "original_shape": list(
+                state.original_df.shape
+            ),
+
+            "working_shape": list(
+                state.working_df.shape
+            ),
+
+            "preview_available": (
+                state.preview_df is not None
+            ),
+
+            "version": state.version,
+
+            "can_undo": bool(
+                state.undo_history
+            ),
+
+            "can_redo": bool(
+                state.redo_history
+            )
+
+        }
+
+
+# ==========================================
+# 13. DELETE DATASET
+# ==========================================
+
+def delete_dataset(dataset_id: str) -> bool:
+
+    with storage_lock:
+
+        if dataset_id not in datasets:
+
+            return False
+
+        del datasets[dataset_id]
+
+        return True
+    Explain this step by step what each module do and how it works with explanation code

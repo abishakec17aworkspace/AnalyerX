@@ -1,227 +1,229 @@
-// import React, { useState } from 'react'
-// import axios from "axios"
-// import DatasetOverview from './DatasetOverview'
-// import { useNavigate } from 'react-router-dom'
 
-// const DataCollector = () => {
-//     const [file,setFile] = useState(null)
-//     const [datasetOverview,setDatasetoverview] = useState(null)
-//     const [loading,setLoading] = useState(false)
-//     const navi = useNavigate();
+import React, { useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
+import {
+  Upload,
+  FileSpreadsheet,
+  X,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 
-//     const Handlefile=(event)=>{
-//         event.preventDefault()
-//          setFile(event.target.files[0])
-//     }
+const API_URL = "http://127.0.0.1:8000";
 
-//     const HandleSubmit = async(event) =>{
-//         event.preventDefault() 
-//         if(!file){
-//             alert("Upload File....")
-//             return
-//         }
-//         const formData = new FormData()
-//         formData.append("dataset",file)
+function DataCollector() {
+  const navigate = useNavigate();
 
-//         try {
-//             setLoading(true)
-//             const Response = await axios.post(
-//                 "http://127.0.0.1:8000/Upload/", formData
-//             )
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-//                 console.log(Response.data)
-//                 console.log("csv file uploaded sucessfully...")   
-                
-//                 // setDatasetoverview(Response.data)
-//                 navi("/Dashboard",{state:{data:Response.data}})
-//         }
-//         catch(error) {
-//             console.error("Upload error:", error)
-// if (error.response) {
-//                 console.error("Backend error:", error.response.data);
-//             }
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files?.[0];
 
-//             alert("Could not upload CSV file");
-//                 }finally{
-//                     setLoading(false)
-//                 }
+    setError("");
+    setSuccess("");
 
+    if (!selectedFile) return;
 
-//     }
-//   return (
-//         <div>
-//         <form   onSubmit={HandleSubmit}>
-//        <div className='bg-white w-fit h-fit  p-4 gap-y-2 flex flex-col justify-center align-middle items-center rounded-md'>
-//         <h1 className='text-gray-900 font-light text-4xl'>Upload the CSV Dataset</h1>
-//         <input  type="file"   
-//         onChange={Handlefile}
-//         className="text-gray-700 text-lg
-//                      file:bg-black file:text-white
-//                      file:px-4 file:py-2
-//                      file:rounded-md file:border-0
-//                      file:cursor-pointer
-//                      scale-90
-//                      hover:file:bg-gray-800"/>
-//         <button className='text-white text-lg bg-black rounded-lg p-2' disabled={loading} type="submit">Submit</button>
-//        </div>
-//        </form>
-//        {/* {datasetOverview && <DatasetOverview data={datasetOverview}/>} */}
-//     </div>
-//   )
-// }
-
-// export default DataCollector
-
-
-import React, { useState, useRef } from 'react'
-import axios from "axios"
-import { useNavigate } from 'react-router-dom'
-import { PlusCircle, Upload, UploadIcon } from 'lucide-react'
-
-const DataCollector = () => {
-    const [file, setFile] = useState(null)
-    const [loading, setLoading] = useState(false)
-
-    const fileInputRef = useRef(null)
-    const navi = useNavigate()
-
-    // Open file picker
-    const HandleUploadClick = () => {
-        fileInputRef.current?.click()
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      setFile(null);
+      setError("Please upload a CSV file only.");
+      event.target.value = "";
+      return;
     }
 
-    // Select CSV file
-    const Handlefile = (event) => {
-        const selectedFile = event.target.files?.[0]
+    setFile(selectedFile);
+  };
 
-        if (selectedFile) {
-            if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-                alert("Please select a CSV file")
-                event.target.value = ''
-                setFile(null)
-                return
-            }
+  const handleRemoveFile = () => {
+    setFile(null);
+    setError("");
+    setSuccess("");
 
-            setFile(selectedFile)
-        }
+    const input = document.getElementById("dataset-file");
+    if (input) input.value = "";
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError("Please select a CSV file first.");
+      return;
     }
 
-    // Upload CSV to FastAPI
-    const HandleSubmit = async (event) => {
-        event.preventDefault()
+    const formData = new FormData();
+    formData.append("dataset", file);
 
-        if (!file) {
-            alert("Please select a CSV file first")
-            return
-        }
+    setLoading(true);
+    setError("");
+    setSuccess("");
 
-        const formData = new FormData()
-        formData.append("dataset", file)
+    try {
+      const response = await axios.post(
+        `${API_URL}/Upload/`,
+        formData
+      );
 
-        try {
-            setLoading(true)
+      const uploadedData = response.data;
 
-            const response = await axios.post(
-                "http://127.0.0.1:8000/Upload/",
-                formData
-            )
+      if (!uploadedData?.dataset_id) {
+        throw new Error(
+          "Upload succeeded, but the backend did not return dataset_id. Update your Upload API to store the dataset and return its ID."
+        );
+      }
 
-            console.log("CSV uploaded successfully:", response.data)
+      if (!uploadedData?.overview) {
+        throw new Error(
+          "The backend response does not contain the dataset overview."
+        );
+      }
 
-            sessionStorage.setItem("uploadeddata",JSON.stringify(response.data))
+      // Store the complete backend response.
+      sessionStorage.setItem(
+        "uploadeddata",
+        JSON.stringify(uploadedData)
+      );
 
-            navi("/Dashboard")
+      setSuccess("Dataset uploaded successfully!");
 
-        } catch (error) {
-            console.error("Upload error:", error)
+      // Navigate to the cleaning page.
+      navigate("/CleaningPage", {
+        state: { data: uploadedData },
+      });
 
-            if (error.response) {
-                console.error("Backend error:", error.response.data)
-                alert(`Upload failed: ${JSON.stringify(error.response.data)}`)
-            } else {
-                alert("Cannot connect to the backend. Check whether FastAPI is running.")
-            }
-        } finally {
-            setLoading(false)
-        }
+    } catch (err) {
+      console.error("UPLOAD ERROR:", err);
+
+      const message =
+        err.response?.data?.detail ||
+        err.message ||
+        "Unable to upload the dataset.";
+
+      setError(message);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    return (
-        <div className="flex flex-col justify-center align-middle items-center">
+  return (
+    <div className="min-h-screen w-full px-5 py-10 text-white">
+      <div className="mx-auto max-w-4xl">
 
-            <form onSubmit={HandleSubmit}>
+        <div className="mb-10 text-center">
+          <h1 className="text-3xl font-bold tracking-wide">
+            Dataset Upload
+          </h1>
 
-                <div className="w-96 min-h-72 p-6 backdrop-blur-lg
-                    flex flex-col justify-center items-center
-                    gap-4 rounded-xl border-2 border-dashed
-                    border-violet-300 hover:border-violet-500
-                    transition-colors"
-                    onClick={HandleUploadClick}>
+          <p className="mt-3 text-sm text-gray-400">
+            Upload your CSV dataset to begin analyzing and cleaning
+            your data.
+          </p>
+        </div>
 
-                    {/* Clickable Upload Area */}
-                    <button
-                        type="button"
-                        
-                        className="flex flex-col items-center gap-3
-                            cursor-pointer focus:outline-none
-                            rounded-lg p-2"
-                    >
-                        <PlusCircle
-                            size={64}
-                            strokeWidth={1.5}
-                            className="text-white"
-                        />
+        <div className="rounded-2xl border border-white/10 bg-black/50 p-8 shadow-xl backdrop-blur-md">
 
-                        <span className="text-white text-2xl font-medium">
-                            Upload CSV Dataset
-                        </span>
+          <label
+            htmlFor="dataset-file"
+            className="flex min-h-[250px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 p-8 text-center transition hover:border-blue-400 hover:bg-blue-500/10"
+          >
+            <div className="mb-5 rounded-full bg-blue-500/15 p-5">
+              <Upload size={36} className="text-blue-400" />
+            </div>
 
-                        {/* <span className="text-gray-500 text-sm">
-                            Click here to select your CSV file
-                        </span> */}
-                    </button>
+            <h2 className="text-lg font-semibold">
+              Choose your CSV dataset
+            </h2>
 
-                    {/* Hidden File Input */}
-                    <input
-                        ref={fileInputRef}
-                        id="csv-upload"
-                        type="file"
-                        accept=".csv,text/csv"
-                        onChange={Handlefile}
-                        className="hidden"
-                    />
+            <p className="mt-2 text-sm text-gray-400">
+              Click here to browse files from your computer
+            </p>
 
-                  
+            <p className="mt-4 text-xs text-gray-500">
+              Supported format: .csv
+            </p>
 
+            <input
+              id="dataset-file"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </label>
+
+          {file && (
+            <div className="mt-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4">
+
+              <div className="flex min-w-0 items-center gap-3">
+                <FileSpreadsheet
+                  size={30}
+                  className="shrink-0 text-green-400"
+                />
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {file.name}
+                  </p>
+
+                  <p className="mt-1 text-xs text-gray-400">
+                    {(file.size / 1024).toFixed(2)} KB
+                  </p>
                 </div>
+              </div>
 
-            {/* Selected Filename */}
-                    {file && (
-                        <div className='flex flex-row mt-2'>
-                        <p className=" flex flex-row gap-2 justify-center align-middle items-center text-sm text-white rounded-lg p-3 text-center break-all">
-                            <span className='text-white font-semibold text-xl'>File :</span> <p className='bg-slate-950/80 p-3 rounded-lg'>{file.name}</p>
-                        </p>
+              <button
+                type="button"
+                onClick={handleRemoveFile}
+                disabled={loading}
+                className="rounded-lg p-2 text-gray-400 transition hover:bg-red-500/10 hover:text-red-400"
+                title="Remove file"
+              >
+                <X size={20} />
+              </button>
 
-                         {/* Submit Button */}
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="text-white text-lg bg-violet-600
-                            hover:bg-violet-700 rounded-2xl px-6 py-2
-                            transition-colors disabled:opacity-50 
-                            disabled:cursor-not-allowed scale-90"
-                    >
-                        {loading ? "Uploading..." : <UploadIcon/>}
-                    </button>
-                    </div>
-                    )}
+            </div>
+          )}
 
+          {error && (
+            <div className="mt-5 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+              <AlertCircle size={20} className="shrink-0" />
+              <p>{error}</p>
+            </div>
+          )}
 
-             
-                       </form>
+          {success && (
+            <div className="mt-5 flex items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
+              <CheckCircle size={20} />
+              <p>{success}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleUpload}
+            disabled={!file || loading}
+            className="mt-7 flex w-full items-center justify-center gap-3 rounded-xl bg-blue-600 px-6 py-4 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                Uploading Dataset...
+              </>
+            ) : (
+              <>
+                <Upload size={20} />
+                Upload Dataset
+              </>
+            )}
+          </button>
 
         </div>
-    )
+      </div>
+    </div>
+  );
 }
 
-export default DataCollector
+export default DataCollector;

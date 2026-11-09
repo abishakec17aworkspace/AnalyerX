@@ -1,12 +1,18 @@
 
-import React, { useEffect, useMemo, useState, useRef } from "react";
-import { toPng, toJpeg, toSvg } from "html-to-image";
-import jsPDF from "jspdf";
+import React, {
+    useEffect,
+    useMemo,
+    useRef,
+    useState
+} from "react";
 
 import {
-    Download,
-    ChevronDown
-} from "lucide-react";
+    toPng,
+    toJpeg,
+    toSvg
+} from "html-to-image";
+
+import jsPDF from "jspdf";
 
 import {
     ResponsiveContainer,
@@ -24,9 +30,9 @@ import {
     Scatter
 } from "recharts";
 
-import mariola from "../assets/CyberGirl.jpg";
-
 import {
+    Download,
+    ChevronDown,
     Database,
     ChartNoAxesColumn,
     Activity,
@@ -35,6 +41,8 @@ import {
     BarChart3,
     RefreshCw
 } from "lucide-react";
+
+import mariola from "../assets/CyberGirl.jpg";
 
 // =====================================================
 // 1. CONSTANTS
@@ -72,8 +80,6 @@ const AXIS_STYLE = {
 // 2. HELPER FUNCTIONS
 // =====================================================
 
-// Convert values to valid numbers.
-
 const toNumber = (value) => {
     if (
         value === null ||
@@ -83,7 +89,6 @@ const toNumber = (value) => {
         return null;
     }
 
-    // Remove commas from numeric strings.
     const cleanedValue =
         typeof value === "string"
             ? value.replace(/,/g, "").trim()
@@ -94,18 +99,15 @@ const toNumber = (value) => {
     return Number.isFinite(number) ? number : null;
 };
 
-// Extract numerical values from a column.
-
 const getNumericValues = (rows, column) => {
     return rows
         .map((row) => toNumber(row[column]))
         .filter((value) => value !== null);
 };
 
-
-// Download a generated data URL.
 const downloadFile = (data, filename) => {
     const link = document.createElement("a");
+
     link.href = data;
     link.download = filename;
 
@@ -114,58 +116,113 @@ const downloadFile = (data, filename) => {
     document.body.removeChild(link);
 };
 
-// Export one chart in the selected format.
-const downloadSingleChart = async (chartElement, chartTitle, format) => {
+const sanitizeFilename = (name) => {
+    return name
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+};
+
+// =====================================================
+// 3. INDIVIDUAL CHART EXPORT
+// =====================================================
+
+const downloadSingleChart = async (
+    chartElement,
+    chartTitle,
+    format
+) => {
     if (!chartElement) return;
 
     const options = {
         backgroundColor: "#0b0b0b",
         pixelRatio: 3,
-        filter: (node) => !node?.dataset?.exportIgnore
+        cacheBust: true,
+        filter: (node) =>
+            !node?.dataset?.exportIgnore
     };
 
-    const fileName = chartTitle
-        .replace(/[^a-z0-9]/gi, "_")
-        .toLowerCase();
+    const filename = sanitizeFilename(chartTitle);
 
     let image;
 
     try {
         switch (format) {
+
             case "PNG":
-                image = await toPng(chartElement, options);
-                downloadFile(image, `${fileName}.png`);
+                image = await toPng(
+                    chartElement,
+                    options
+                );
+
+                downloadFile(
+                    image,
+                    `${filename}.png`
+                );
                 break;
 
             case "JPG":
-                image = await toJpeg(chartElement, {
-                    ...options,
-                    quality: 0.95
-                });
-                downloadFile(image, `${fileName}.jpg`);
+                image = await toJpeg(
+                    chartElement,
+                    {
+                        ...options,
+                        quality: 0.95
+                    }
+                );
+
+                downloadFile(
+                    image,
+                    `${filename}.jpg`
+                );
                 break;
 
             case "SVG":
-                image = await toSvg(chartElement, options);
-                downloadFile(image, `${fileName}.svg`);
+                image = await toSvg(
+                    chartElement,
+                    options
+                );
+
+                downloadFile(
+                    image,
+                    `${filename}.svg`
+                );
                 break;
 
             case "PDF": {
-                image = await toPng(chartElement, options);
+                image = await toPng(
+                    chartElement,
+                    options
+                );
 
-                const pdf = new jsPDF("l", "mm", "a4");
-                const pageWidth = pdf.internal.pageSize.getWidth();
-                const pageHeight = pdf.internal.pageSize.getHeight();
-                const properties = pdf.getImageProperties(image);
+                const pdf = new jsPDF(
+                    "l",
+                    "mm",
+                    "a4"
+                );
+
+                const pageWidth =
+                    pdf.internal.pageSize.getWidth();
+
+                const pageHeight =
+                    pdf.internal.pageSize.getHeight();
+
+                const properties =
+                    pdf.getImageProperties(image);
+
                 const margin = 10;
 
                 const scale = Math.min(
-                    (pageWidth - margin * 2) / properties.width,
-                    (pageHeight - margin * 2) / properties.height
+                    (pageWidth - margin * 2) /
+                        properties.width,
+
+                    (pageHeight - margin * 2) /
+                        properties.height
                 );
 
-                const width = properties.width * scale;
-                const height = properties.height * scale;
+                const width =
+                    properties.width * scale;
+
+                const height =
+                    properties.height * scale;
 
                 pdf.addImage(
                     image,
@@ -176,80 +233,131 @@ const downloadSingleChart = async (chartElement, chartTitle, format) => {
                     height
                 );
 
-                pdf.save(`${fileName}.pdf`);
+                pdf.save(`${filename}.pdf`);
                 break;
             }
 
             default:
-                throw new Error(`Unsupported export format: ${format}`);
+                throw new Error(
+                    `Unsupported format: ${format}`
+                );
         }
+
     } catch (error) {
-        console.error("Chart export failed:", error);
+        console.error(
+            "Chart export failed:",
+            error
+        );
+
         throw error;
     }
 };
 
+// =====================================================
+// 4. DOWNLOAD ALL CHARTS
+// =====================================================
+
 const downloadAllCharts = async () => {
     try {
-        const chartElements = document.querySelectorAll(".export-chart-card");
+        const chartElements =
+            document.querySelectorAll(
+                ".export-chart-card"
+            );
 
-        if (chartElements.length === 0) {
+        if (!chartElements.length) {
             alert("No charts available to download.");
             return;
         }
 
-        const pdf = new jsPDF("p", "mm", "a4");
+        const pdf = new jsPDF(
+            "p",
+            "mm",
+            "a4"
+        );
 
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const pdfWidth =
+            pdf.internal.pageSize.getWidth();
+
+        const pdfHeight =
+            pdf.internal.pageSize.getHeight();
 
         const margin = 10;
 
-        for (let i = 0; i < chartElements.length; i++) {
+        for (
+            let index = 0;
+            index < chartElements.length;
+            index++
+        ) {
+            const chart = chartElements[index];
 
-            const chart = chartElements[i];
+            const image = await toPng(
+                chart,
+                {
+                    backgroundColor: "#0b0b0b",
+                    pixelRatio: 2,
+                    cacheBust: true,
+                    filter: (node) =>
+                        !node?.dataset?.exportIgnore
+                }
+            );
 
-            const image = await toPng(chart, {
-                backgroundColor: "#0b0b0b",
-                pixelRatio: 2,
-                filter: (node) => !node?.dataset?.exportIgnore
-            });
+            const properties =
+                pdf.getImageProperties(image);
 
-            const imageProperties = pdf.getImageProperties(image);
-
-            const imageWidth = pdfWidth - margin * 2;
+            const imageWidth =
+                pdfWidth - margin * 2;
 
             const imageHeight =
-                (imageProperties.height * imageWidth) /
-                imageProperties.width;
+                (
+                    properties.height *
+                    imageWidth
+                ) / properties.width;
 
-            if (i > 0) {
+            if (index > 0) {
                 pdf.addPage();
             }
+
+            // Scale image to fit the page.
+            const scale = Math.min(
+                1,
+                (pdfHeight - margin * 2) / imageHeight
+            );
+
+            const finalWidth = imageWidth * scale;
+            const finalHeight = imageHeight * scale;
 
             pdf.addImage(
                 image,
                 "PNG",
+                (pdfWidth - finalWidth) / 2,
                 margin,
-                margin,
-                imageWidth,
-                Math.min(imageHeight, pdfHeight - margin * 2)
+                finalWidth,
+                finalHeight
             );
         }
 
-        pdf.save("AnalyzerX_Charts_Report.pdf");
+        pdf.save("AnalyxerX_All_Charts_Report.pdf");
 
     } catch (error) {
+        console.error(
+            "Chart download failed:",
+            error
+        );
 
-        console.error("Chart download failed:", error);
-
-        alert("Unable to download charts. Please try again.");
+        alert(
+            "Unable to download charts. Please try again."
+        );
     }
 };
 
-// Calculate percentile using interpolation.
+// =====================================================
+// 5. STATISTICAL FUNCTIONS
+// =====================================================
 
-const calculatePercentile = (sortedValues, percentile) => {
+const calculatePercentile = (
+    sortedValues,
+    percentile
+) => {
     if (!sortedValues.length) return null;
 
     const index =
@@ -264,12 +372,12 @@ const calculatePercentile = (sortedValues, percentile) => {
 
     return (
         sortedValues[lower] +
-        (sortedValues[upper] - sortedValues[lower]) *
-        (index - lower)
+        (
+            sortedValues[upper] -
+            sortedValues[lower]
+        ) * (index - lower)
     );
 };
-
-// Calculate all numerical statistics directly from dataset rows.
 
 const calculateNumericalStatistics = (values) => {
     if (!values.length) return null;
@@ -286,17 +394,36 @@ const calculateNumericalStatistics = (values) => {
     return {
         count: values.length,
         min: sortedValues[0],
-        q1: calculatePercentile(sortedValues, 0.25),
-        median: calculatePercentile(sortedValues, 0.50),
-        q3: calculatePercentile(sortedValues, 0.75),
+
+        q1: calculatePercentile(
+            sortedValues,
+            0.25
+        ),
+
+        median: calculatePercentile(
+            sortedValues,
+            0.50
+        ),
+
+        q3: calculatePercentile(
+            sortedValues,
+            0.75
+        ),
+
         max: sortedValues[sortedValues.length - 1],
+
         mean: sum / values.length
     };
 };
 
-// Create histogram bins.
+// =====================================================
+// 6. HISTOGRAM
+// =====================================================
 
-const createHistogram = (values, binCount = 10) => {
+const createHistogram = (
+    values,
+    binCount = 10
+) => {
     if (!values.length) return [];
 
     const min = Math.min(...values);
@@ -311,12 +438,14 @@ const createHistogram = (values, binCount = 10) => {
         ];
     }
 
-    const binSize = (max - min) / binCount;
+    const binSize =
+        (max - min) / binCount;
 
     const bins = Array.from(
         { length: binCount },
         (_, index) => {
-            const start = min + index * binSize;
+            const start =
+                min + index * binSize;
 
             const end =
                 index === binCount - 1
@@ -324,7 +453,8 @@ const createHistogram = (values, binCount = 10) => {
                     : start + binSize;
 
             return {
-                range: `${start.toFixed(1)} - ${end.toFixed(1)}`,
+                range:
+                    `${start.toFixed(1)} - ${end.toFixed(1)}`,
                 count: 0
             };
         }
@@ -335,7 +465,10 @@ const createHistogram = (values, binCount = 10) => {
             (value - min) / binSize
         );
 
-        index = Math.min(index, binCount - 1);
+        index = Math.min(
+            index,
+            binCount - 1
+        );
 
         bins[index].count += 1;
     });
@@ -343,9 +476,14 @@ const createHistogram = (values, binCount = 10) => {
     return bins;
 };
 
-// Get the most frequent categorical values.
+// =====================================================
+// 7. CATEGORICAL FREQUENCY
+// =====================================================
 
-const getCategoryCounts = (rows, column) => {
+const getCategoryCounts = (
+    rows,
+    column
+) => {
     const counts = {};
 
     rows.forEach((row) => {
@@ -358,7 +496,8 @@ const getCategoryCounts = (rows, column) => {
         ) {
             const key = String(value);
 
-            counts[key] = (counts[key] || 0) + 1;
+            counts[key] =
+                (counts[key] || 0) + 1;
         }
     });
 
@@ -367,13 +506,21 @@ const getCategoryCounts = (rows, column) => {
             name,
             count
         }))
-        .sort((a, b) => b.count - a.count)
+        .sort(
+            (a, b) => b.count - a.count
+        )
         .slice(0, 10);
 };
 
-// Calculate Pearson correlation.
+// =====================================================
+// 8. CORRELATION
+// =====================================================
 
-const getCorrelation = (rows, columnA, columnB) => {
+const getCorrelation = (
+    rows,
+    columnA,
+    columnB
+) => {
     const pairs = rows
         .map((row) => ({
             x: toNumber(row[columnA]),
@@ -410,7 +557,8 @@ const getCorrelation = (rows, columnA, columnB) => {
     const denominatorX = Math.sqrt(
         pairs.reduce(
             (sum, pair) =>
-                sum + (pair.x - meanX) ** 2,
+                sum +
+                (pair.x - meanX) ** 2,
             0
         )
     );
@@ -418,7 +566,8 @@ const getCorrelation = (rows, columnA, columnB) => {
     const denominatorY = Math.sqrt(
         pairs.reduce(
             (sum, pair) =>
-                sum + (pair.y - meanY) ** 2,
+                sum +
+                (pair.y - meanY) ** 2,
             0
         )
     );
@@ -430,12 +579,15 @@ const getCorrelation = (rows, columnA, columnB) => {
         return null;
     }
 
-    return numerator / (
-        denominatorX * denominatorY
+    return (
+        numerator /
+        (denominatorX * denominatorY)
     );
 };
 
-// Calculate quartiles and outliers.
+// =====================================================
+// 9. BOX PLOT STATISTICS
+// =====================================================
 
 const getBoxStatistics = (values) => {
     if (!values.length) return null;
@@ -447,14 +599,28 @@ const getBoxStatistics = (values) => {
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
 
-    const q1 = calculatePercentile(sorted, 0.25);
-    const median = calculatePercentile(sorted, 0.50);
-    const q3 = calculatePercentile(sorted, 0.75);
+    const q1 = calculatePercentile(
+        sorted,
+        0.25
+    );
+
+    const median = calculatePercentile(
+        sorted,
+        0.50
+    );
+
+    const q3 = calculatePercentile(
+        sorted,
+        0.75
+    );
 
     const iqr = q3 - q1;
 
-    const lowerFence = q1 - 1.5 * iqr;
-    const upperFence = q3 + 1.5 * iqr;
+    const lowerFence =
+        q1 - 1.5 * iqr;
+
+    const upperFence =
+        q3 + 1.5 * iqr;
 
     const outliers = sorted.filter(
         (value) =>
@@ -475,20 +641,16 @@ const getBoxStatistics = (values) => {
 };
 
 // =====================================================
-// 3. REUSABLE UI COMPONENTS
+// 10. REUSABLE SUMMARY CARD
 // =====================================================
-
-// SUMMARY CARD
 
 const SummaryCard = ({
     title,
     value,
-    icon,
+    icon: Icon,
     color,
     description
 }) => {
-    const Icon = icon;
-
     return (
         <div
             className="
@@ -506,7 +668,11 @@ const SummaryCard = ({
                     {title}
                 </p>
 
-                <div className={`rounded-lg p-2 ${color || "bg-black/70"}`}>
+                <div
+                    className={`rounded-lg p-2 ${
+                        color || "bg-black/70"
+                    }`}
+                >
                     <Icon size={20} />
                 </div>
             </div>
@@ -522,7 +688,10 @@ const SummaryCard = ({
     );
 };
 
-// CHART CARD WITH INDIVIDUAL EXPORT OPTIONS
+// =====================================================
+// 11. CHART CARD WITH EXPORT OPTIONS
+// =====================================================
+
 const ChartCard = ({
     title,
     description,
@@ -530,8 +699,12 @@ const ChartCard = ({
     className = ""
 }) => {
     const chartRef = useRef(null);
-    const [format, setFormat] = useState("PNG");
-    const [downloading, setDownloading] = useState(false);
+
+    const [format, setFormat] =
+        useState("PNG");
+
+    const [downloading, setDownloading] =
+        useState(false);
 
     const handleDownload = async () => {
         if (downloading) return;
@@ -539,13 +712,22 @@ const ChartCard = ({
         setDownloading(true);
 
         try {
+            // Allow chart rendering to complete.
+            await new Promise((resolve) =>
+                setTimeout(resolve, 300)
+            );
+
             await downloadSingleChart(
                 chartRef.current,
                 title,
                 format
             );
+
         } catch (error) {
-            alert("Unable to export chart. Please try again.");
+            alert(
+                "Unable to export chart. Please try again."
+            );
+
         } finally {
             setDownloading(false);
         }
@@ -567,11 +749,21 @@ const ChartCard = ({
                 ${className}
             `}
         >
-            <div className="
-                flex flex-col gap-3
-                md:flex-row md:items-center md:justify-between
-            ">
-                <h2 className="text-lg md:text-xl font-semibold text-white p-2 rounded-lg w-fit">
+            <div
+                className="
+                    flex flex-col gap-3
+                    md:flex-row
+                    md:items-center
+                    md:justify-between
+                "
+            >
+                <h2
+                    className="
+                        text-lg md:text-xl
+                        font-semibold text-white
+                        p-2 rounded-lg w-fit
+                    "
+                >
                     {title}
                 </h2>
 
@@ -582,7 +774,9 @@ const ChartCard = ({
                     <div className="relative">
                         <select
                             value={format}
-                            onChange={(event) => setFormat(event.target.value)}
+                            onChange={(event) =>
+                                setFormat(event.target.value)
+                            }
                             aria-label={`Export format for ${title}`}
                             className="
                                 appearance-none
@@ -602,7 +796,8 @@ const ChartCard = ({
                             size={15}
                             className="
                                 absolute right-3 top-1/2
-                                -translate-y-1/2 text-gray-400
+                                -translate-y-1/2
+                                text-gray-400
                                 pointer-events-none
                             "
                         />
@@ -623,7 +818,10 @@ const ChartCard = ({
                         "
                     >
                         <Download size={16} />
-                        {downloading ? "Exporting..." : "Download"}
+
+                        {downloading
+                            ? "Exporting..."
+                            : "Download"}
                     </button>
                 </div>
             </div>
@@ -637,7 +835,9 @@ const ChartCard = ({
     );
 };
 
-// SELECT FIELD
+// =====================================================
+// 12. SELECT FIELD
+// =====================================================
 
 const SelectField = ({
     label,
@@ -681,7 +881,9 @@ const SelectField = ({
     );
 };
 
-// EMPTY CHART
+// =====================================================
+// 13. EMPTY CHART
+// =====================================================
 
 const EmptyChart = ({ message }) => {
     return (
@@ -706,22 +908,24 @@ const EmptyChart = ({ message }) => {
 };
 
 // =====================================================
-// 4. MAIN CHARTS COMPONENT
+// 14. MAIN CHARTS COMPONENT
 // =====================================================
 
-const Charts = () => {
+const Charts = ({
+    dataset: suppliedData = null
+}) => {
 
-    // -------------------------------------
-    // GET STORED DATASET
-    // -------------------------------------
+    // ---------------------------------------------
+    // GET DATASET
+    // ---------------------------------------------
 
-    const data = useMemo(() => {
+    const storedData = useMemo(() => {
         try {
-            const storedData =
+            const stored =
                 sessionStorage.getItem("uploadeddata");
 
-            return storedData
-                ? JSON.parse(storedData)
+            return stored
+                ? JSON.parse(stored)
                 : null;
 
         } catch (error) {
@@ -734,11 +938,16 @@ const Charts = () => {
         }
     }, []);
 
+    // Prefer the dataset passed from ReportPage.
+    // Otherwise, use the original uploaded dataset.
+
+    const data = suppliedData || storedData;
+
     const overview = data?.overview;
 
-    // -------------------------------------
+    // ---------------------------------------------
     // EXTRACT DATASET INFORMATION
-    // -------------------------------------
+    // ---------------------------------------------
 
     const rows = Array.isArray(
         overview?.complete_data
@@ -758,18 +967,19 @@ const Charts = () => {
     const columnInformation =
         overview?.column_information || [];
 
-    // -------------------------------------
-    // IDENTIFY DATASET COLUMNS
-    // -------------------------------------
+    // ---------------------------------------------
+    // IDENTIFY COLUMNS
+    // ---------------------------------------------
 
-    const allColumns = rows.length > 0
-        ? Object.keys(rows[0])
-        : [];
+    const allColumns = useMemo(() => {
+        return rows.length > 0
+            ? Object.keys(rows[0])
+            : [];
+    }, [rows]);
 
+    // ---------------------------------------------
     // NUMERICAL COLUMNS
-    // Identify columns with numeric values.
-    // A small number of invalid/missing values
-    // will not automatically exclude the column.
+    // ---------------------------------------------
 
     const numericColumns = useMemo(() => {
         return allColumns.filter((column) => {
@@ -788,15 +998,16 @@ const Charts = () => {
                     String(row[column]).trim() !== ""
             );
 
-            // Require at least 80% of non-empty values
-            // to be numeric to identify as numerical.
             return (
+                nonEmptyValues.length > 0 &&
                 values.length / nonEmptyValues.length >= 0.8
             );
         });
     }, [rows, allColumns]);
 
+    // ---------------------------------------------
     // CATEGORICAL COLUMNS
+    // ---------------------------------------------
 
     const categoricalColumns = useMemo(() => {
         return allColumns.filter(
@@ -805,9 +1016,9 @@ const Charts = () => {
         );
     }, [allColumns, numericColumns]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // STATE MANAGEMENT
-    // -------------------------------------
+    // ---------------------------------------------
 
     const [selectedColumn, setSelectedColumn] =
         useState("");
@@ -821,7 +1032,9 @@ const Charts = () => {
     const [categoryColumn, setCategoryColumn] =
         useState("");
 
+    // ---------------------------------------------
     // DEFAULT COLUMN SELECTIONS
+    // ---------------------------------------------
 
     useEffect(() => {
 
@@ -870,28 +1083,31 @@ const Charts = () => {
         categoryColumn
     ]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // MISSING VALUES CHART
-    // -------------------------------------
+    // ---------------------------------------------
 
-    const missingChartData = Object.entries(
-        missingValues.column_wise || {}
-    )
-        .map(([column, count]) => ({
-            column,
-            missing: Number(count)
-        }))
-        .filter(
-            (item) =>
-                Number.isFinite(item.missing)
-        );
+    const missingChartData = useMemo(() => {
+        return Object.entries(
+            missingValues.column_wise || {}
+        )
+            .map(([column, count]) => ({
+                column,
+                missing: Number(count)
+            }))
+            .filter(
+                (item) =>
+                    Number.isFinite(item.missing)
+            );
+    }, [missingValues]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // DATA TYPE DISTRIBUTION
-    // -------------------------------------
+    // ---------------------------------------------
 
-    const dataTypeCounts =
-        columnInformation.reduce(
+    const dataTypeChartData = useMemo(() => {
+
+        const counts = columnInformation.reduce(
             (result, column) => {
 
                 const type =
@@ -908,17 +1124,18 @@ const Charts = () => {
             {}
         );
 
-    const dataTypeChartData =
-        Object.entries(dataTypeCounts).map(
+        return Object.entries(counts).map(
             ([name, value]) => ({
                 name,
                 value
             })
         );
 
-    // -------------------------------------
-    // NUMERICAL STATISTICS - FIXED
-    // -------------------------------------
+    }, [columnInformation]);
+
+    // ---------------------------------------------
+    // NUMERICAL STATISTICS
+    // ---------------------------------------------
 
     const selectedStats = useMemo(() => {
 
@@ -929,7 +1146,9 @@ const Charts = () => {
             selectedColumn
         );
 
-        return calculateNumericalStatistics(values);
+        return calculateNumericalStatistics(
+            values
+        );
 
     }, [rows, selectedColumn]);
 
@@ -955,17 +1174,12 @@ const Charts = () => {
                 statistic: "Maximum",
                 value: selectedStats.max
             }
-        ].filter(
-            (item) =>
-                item.value !== null &&
-                item.value !== undefined &&
-                Number.isFinite(item.value)
-        )
+        ]
         : [];
 
-    // -------------------------------------
+    // ---------------------------------------------
     // HISTOGRAM
-    // -------------------------------------
+    // ---------------------------------------------
 
     const histogramData = useMemo(() => {
 
@@ -976,13 +1190,16 @@ const Charts = () => {
             selectedColumn
         );
 
-        return createHistogram(values, 10);
+        return createHistogram(
+            values,
+            10
+        );
 
     }, [rows, selectedColumn]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // SCATTER PLOT
-    // -------------------------------------
+    // ---------------------------------------------
 
     const scatterData = useMemo(() => {
 
@@ -1001,9 +1218,9 @@ const Charts = () => {
 
     }, [rows, xColumn, yColumn]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // CATEGORICAL FREQUENCY
-    // -------------------------------------
+    // ---------------------------------------------
 
     const categoryData = useMemo(() => {
 
@@ -1016,9 +1233,9 @@ const Charts = () => {
 
     }, [rows, categoryColumn]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // CORRELATION MATRIX
-    // -------------------------------------
+    // ---------------------------------------------
 
     const correlationData = useMemo(() => {
 
@@ -1039,9 +1256,9 @@ const Charts = () => {
 
     }, [rows, numericColumns]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // BOX PLOT STATISTICS
-    // -------------------------------------
+    // ---------------------------------------------
 
     const boxStatistics = useMemo(() => {
 
@@ -1056,9 +1273,9 @@ const Charts = () => {
 
     }, [rows, selectedColumn]);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // DATASET QUALITY
-    // -------------------------------------
+    // ---------------------------------------------
 
     const missingPercentage =
         Number(missingValues.percentage || 0);
@@ -1066,11 +1283,11 @@ const Charts = () => {
     const duplicatePercentage =
         Number(duplicates.percentage || 0);
 
-    // -------------------------------------
+    // ---------------------------------------------
     // NO DATASET HANDLING
-    // -------------------------------------
+    // ---------------------------------------------
 
-    if (!overview) {
+    if (!overview || !rows.length) {
         return (
             <div
                 className="
@@ -1106,12 +1323,11 @@ const Charts = () => {
         );
     }
 
-    // =====================================================
-    // 5. MAIN DASHBOARD UI
-    // =====================================================
+    // =================================================
+    // 15. MAIN DASHBOARD UI
+    // =================================================
 
     return (
-
         <div
             className="
                 min-h-screen w-full
@@ -1135,7 +1351,6 @@ const Charts = () => {
                     md:justify-between
                 "
             >
-
                 <div>
 
                     <div className="flex items-center gap-3">
@@ -1149,12 +1364,10 @@ const Charts = () => {
                                 p-3
                             "
                         >
-
                             <BarChart3
                                 className="text-black"
                                 size={28}
                             />
-
                         </div>
 
                         <h1
@@ -1170,7 +1383,7 @@ const Charts = () => {
 
                     <p className="mt-3 text-sm text-gray-950">
                         Explore patterns, distributions and
-                        relationships in your uploaded dataset.
+                        relationships in your dataset.
                     </p>
 
                     <p className="mt-3 text-sm text-black bg-white rounded-2xl p-3">
@@ -1190,13 +1403,11 @@ const Charts = () => {
                         px-4 py-3
                     "
                 >
-
                     <p className="text-xs text-gray-950">
                         DATASET DIMENSIONS
                     </p>
 
                     <p className="mt-1 text-lg font-semibold text-white">
-
                         {datasetSize.total_rows ?? rows.length}
                         {" "}Rows
 
@@ -1206,9 +1417,7 @@ const Charts = () => {
 
                         {datasetSize.total_columns ?? allColumns.length}
                         {" "}Columns
-
                     </p>
-
                 </div>
 
             </div>
@@ -1222,7 +1431,6 @@ const Charts = () => {
                     xl:grid-cols-4
                 "
             >
-
                 <SummaryCard
                     title="Total Rows"
                     value={(
@@ -1264,25 +1472,16 @@ const Charts = () => {
                     color="bg-orange-500/10 text-orange-400"
                     description={`${duplicatePercentage}% duplicate records`}
                 />
-
             </div>
 
-            {/* ROW 1 - MISSING VALUES + DATA TYPES */}
+            {/* MISSING VALUES + DATA TYPES */}
 
-            <div
-                className="
-                    grid grid-cols-1
-                    gap-5 xl:grid-cols-2
-                "
-            >
-
-                {/* MISSING VALUES */}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
 
                 <ChartCard
                     title="Missing Values Analysis"
                     description="Missing values across dataset columns."
                 >
-
                     {missingChartData.some(
                         (item) => item.missing > 0
                     ) ? (
@@ -1291,7 +1490,6 @@ const Charts = () => {
                             width="100%"
                             height={320}
                         >
-
                             <BarChart
                                 data={missingChartData}
                                 margin={{
@@ -1301,7 +1499,6 @@ const Charts = () => {
                                     bottom: 10
                                 }}
                             >
-
                                 <CartesianGrid {...GRID_STYLE} />
 
                                 <XAxis
@@ -1330,35 +1527,25 @@ const Charts = () => {
                                     fill="#ef4444"
                                     radius={[6, 6, 0, 0]}
                                 />
-
                             </BarChart>
-
                         </ResponsiveContainer>
 
                     ) : (
-                        <EmptyChart
-                            message="No missing values found."
-                        />
+                        <EmptyChart message="No missing values found." />
                     )}
-
                 </ChartCard>
-
-                {/* DATA TYPE DISTRIBUTION */}
 
                 <ChartCard
                     title="Column Data Type Distribution"
                     description="Distribution of different column data types."
                 >
-
                     {dataTypeChartData.length > 0 ? (
 
                         <ResponsiveContainer
                             width="100%"
                             height={320}
                         >
-
                             <PieChart>
-
                                 <Pie
                                     data={dataTypeChartData}
                                     dataKey="value"
@@ -1368,7 +1555,6 @@ const Charts = () => {
                                     outerRadius={105}
                                     label
                                 >
-
                                     {dataTypeChartData.map(
                                         (entry, index) => (
                                             <Cell
@@ -1381,7 +1567,6 @@ const Charts = () => {
                                             />
                                         )
                                     )}
-
                                 </Pie>
 
                                 <Tooltip
@@ -1389,17 +1574,12 @@ const Charts = () => {
                                 />
 
                                 <Legend />
-
                             </PieChart>
-
                         </ResponsiveContainer>
 
                     ) : (
-                        <EmptyChart
-                            message="No column type information available."
-                        />
+                        <EmptyChart message="No column type information available." />
                     )}
-
                 </ChartCard>
 
             </div>
@@ -1410,28 +1590,19 @@ const Charts = () => {
                 title="Numerical Statistical Analysis"
                 description="Compare minimum, quartiles, median, mean and maximum values."
             >
-
                 {numericColumns.length > 0 ? (
-
                     <>
-
                         <div className="mb-6">
-
                             <SelectField
                                 label="Select Numerical Column"
                                 value={selectedColumn}
                                 onChange={setSelectedColumn}
                                 options={numericColumns}
                             />
-
                         </div>
 
-                        {/* NUMERICAL SUMMARY CARDS */}
-
                         {selectedStats && (
-
                             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
-
                                 {[
                                     ["Count", selectedStats.count],
                                     ["Mean", selectedStats.mean],
@@ -1440,12 +1611,10 @@ const Charts = () => {
                                     ["Median", selectedStats.median],
                                     ["Q3 (75%)", selectedStats.q3]
                                 ].map(([label, value]) => (
-
                                     <div
                                         key={label}
                                         className="rounded-lg border border-[#292929] bg-black/30 p-4"
                                     >
-
                                         <p className="text-xs text-gray-400">
                                             {label}
                                         </p>
@@ -1458,22 +1627,16 @@ const Charts = () => {
                                                 }
                                             )}
                                         </p>
-
                                     </div>
-
                                 ))}
-
                             </div>
-
                         )}
 
                         {statisticalChartData.length > 0 ? (
-
                             <ResponsiveContainer
                                 width="100%"
                                 height={330}
                             >
-
                                 <BarChart
                                     data={statisticalChartData}
                                     margin={{
@@ -1483,7 +1646,6 @@ const Charts = () => {
                                         bottom: 10
                                     }}
                                 >
-
                                     <CartesianGrid {...GRID_STYLE} />
 
                                     <XAxis
@@ -1505,35 +1667,20 @@ const Charts = () => {
                                         fill="#6366f1"
                                         radius={[6, 6, 0, 0]}
                                     />
-
                                 </BarChart>
-
                             </ResponsiveContainer>
-
                         ) : (
-                            <EmptyChart
-                                message="Could not calculate statistics for this column."
-                            />
+                            <EmptyChart message="Could not calculate statistics for this column." />
                         )}
-
                     </>
-
                 ) : (
-                    <EmptyChart
-                        message="No numerical columns detected."
-                    />
+                    <EmptyChart message="No numerical columns detected." />
                 )}
-
             </ChartCard>
 
             {/* HISTOGRAM + SCATTER PLOT */}
 
-            <div
-                className="
-                    grid grid-cols-1
-                    gap-5 xl:grid-cols-2
-                "
-            >
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
 
                 {/* HISTOGRAM */}
 
@@ -1541,27 +1688,21 @@ const Charts = () => {
                     title="Numerical Distribution"
                     description="Understand the frequency distribution of numerical values."
                 >
-
                     {numericColumns.length > 0 ? (
-
                         <>
-
                             <div className="mb-5">
-
                                 <SelectField
                                     label="Select Numerical Column"
                                     value={selectedColumn}
                                     onChange={setSelectedColumn}
                                     options={numericColumns}
                                 />
-
                             </div>
 
                             <ResponsiveContainer
                                 width="100%"
                                 height={320}
                             >
-
                                 <BarChart
                                     data={histogramData}
                                     margin={{
@@ -1571,7 +1712,6 @@ const Charts = () => {
                                         bottom: 10
                                     }}
                                 >
-
                                     <CartesianGrid {...GRID_STYLE} />
 
                                     <XAxis
@@ -1599,19 +1739,12 @@ const Charts = () => {
                                         fill="#8b5cf6"
                                         radius={[5, 5, 0, 0]}
                                     />
-
                                 </BarChart>
-
                             </ResponsiveContainer>
-
                         </>
-
                     ) : (
-                        <EmptyChart
-                            message="No numerical columns available."
-                        />
+                        <EmptyChart message="No numerical columns available." />
                     )}
-
                 </ChartCard>
 
                 {/* SCATTER PLOT */}
@@ -1620,19 +1753,9 @@ const Charts = () => {
                     title="Numerical Relationship Analysis"
                     description="Compare two numerical columns to identify possible relationships."
                 >
-
                     {numericColumns.length > 0 ? (
-
                         <>
-
-                            <div
-                                className="
-                                    flex flex-col
-                                    gap-4 mb-5
-                                    md:flex-row
-                                "
-                            >
-
+                            <div className="flex flex-col gap-4 mb-5 md:flex-row">
                                 <SelectField
                                     label="X Axis"
                                     value={xColumn}
@@ -1646,16 +1769,13 @@ const Charts = () => {
                                     onChange={setYColumn}
                                     options={numericColumns}
                                 />
-
                             </div>
 
                             {scatterData.length > 0 ? (
-
                                 <ResponsiveContainer
                                     width="100%"
                                     height={320}
                                 >
-
                                     <ScatterChart
                                         margin={{
                                             top: 10,
@@ -1664,7 +1784,6 @@ const Charts = () => {
                                             bottom: 10
                                         }}
                                     >
-
                                         <CartesianGrid {...GRID_STYLE} />
 
                                         <XAxis
@@ -1695,118 +1814,58 @@ const Charts = () => {
                                             data={scatterData}
                                             fill="#06b6d4"
                                         />
-
                                     </ScatterChart>
-
                                 </ResponsiveContainer>
-
                             ) : (
-                                <EmptyChart
-                                    message="No valid numerical pairs found."
-                                />
+                                <EmptyChart message="No valid numerical pairs found." />
                             )}
-
                         </>
-
                     ) : (
-                        <EmptyChart
-                            message="At least one numerical column is required."
-                        />
+                        <EmptyChart message="At least one numerical column is required." />
                     )}
-
                 </ChartCard>
 
             </div>
 
-             {/* BOX PLOT / OUTLIER ANALYSIS */}
+            {/* BOX PLOT AND OUTLIER ANALYSIS */}
 
             <ChartCard
                 title="Box Plot & Outlier Analysis"
                 description="Understand the spread of numerical data, quartiles and potential outliers."
             >
-
                 {boxStatistics ? (
-
                     <>
-
-                        {/* QUARTILE SUMMARY */}
-
-                        <div
-                            className="
-                                grid grid-cols-2
-                                gap-4 mb-7
-                                md:grid-cols-5
-                            "
-                        >
-
+                        <div className="grid grid-cols-2 gap-4 mb-7 md:grid-cols-5">
                             {[
                                 ["Minimum", boxStatistics.min],
                                 ["Q1", boxStatistics.q1],
                                 ["Median", boxStatistics.median],
                                 ["Q3", boxStatistics.q3],
                                 ["Maximum", boxStatistics.max]
-                            ].map(
-                                ([label, value]) => (
+                            ].map(([label, value]) => (
+                                <div
+                                    key={label}
+                                    className="rounded-xl border border-[#252525] bg-[#0b0b0b15] p-4 transition hover:border-gray-600"
+                                >
+                                    <p className="text-xs text-gray-500">
+                                        {label}
+                                    </p>
 
-                                    <div
-                                        key={label}
-                                        className="
-                                            rounded-xl
-                                            border border-[#252525]
-                                            bg-[#0b0b0b15]
-                                            p-4
-                                            transition
-                                            hover:border-gray-600
-                                        "
-                                    >
-
-                                        <p className="text-xs text-gray-500">
-                                            {label}
-                                        </p>
-
-                                        <p
-                                            className="
-                                                mt-2 text-lg
-                                                font-semibold text-white
-                                            "
-                                        >
-                                            {Number(value).toLocaleString(
-                                                undefined,
-                                                {
-                                                    maximumFractionDigits: 3
-                                                }
-                                            )}
-                                        </p>
-
-                                    </div>
-
-                                )
-                            )}
-
+                                    <p className="mt-2 text-lg font-semibold text-white">
+                                        {Number(value).toLocaleString(
+                                            undefined,
+                                            {
+                                                maximumFractionDigits: 3
+                                            }
+                                        )}
+                                    </p>
+                                </div>
+                            ))}
                         </div>
 
-                        {/* BOX PLOT VISUALIZATION */}
-
-                        <div
-                            className="
-                                rounded-xl
-                                border border-[#252525]
-                                bg-[#0b0b0b15]
-                                p-5
-                            "
-                        >
-
-                            <div
-                                className="
-                                    flex flex-col gap-3
-                                    md:flex-row
-                                    md:items-center
-                                    md:justify-between
-                                "
-                            >
-
+                        <div className="rounded-xl border border-[#252525] bg-[#0b0b0b15] p-5">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                 <div>
-
                                     <p className="text-sm text-gray-400">
                                         Selected column
                                     </p>
@@ -1814,27 +1873,18 @@ const Charts = () => {
                                     <h3 className="mt-1 text-lg font-semibold text-white">
                                         {selectedColumn}
                                     </h3>
-
                                 </div>
 
                                 <div className="text-sm text-orange-400">
                                     Potential outliers:{" "}
                                     {boxStatistics.outlierCount}
                                 </div>
-
                             </div>
 
                             {/* SCALE */}
 
                             <div className="mt-7">
-
-                                <div
-                                    className="
-                                        mb-3 flex justify-between
-                                        text-xs text-gray-500
-                                    "
-                                >
-
+                                <div className="mb-3 flex justify-between text-xs text-gray-500">
                                     <span>
                                         Min: {boxStatistics.min}
                                     </span>
@@ -1842,29 +1892,15 @@ const Charts = () => {
                                     <span>
                                         Max: {boxStatistics.max}
                                     </span>
-
                                 </div>
 
-                                {/* BOX PLOT */}
-
                                 <div className="relative flex h-12 items-center">
-
-                                    <div
-                                        className="
-                                            absolute left-0 right-0
-                                            h-0.5 bg-gray-700
-                                        "
-                                    />
+                                    <div className="absolute left-0 right-0 h-0.5 bg-gray-700" />
 
                                     {/* IQR BOX */}
 
                                     <div
-                                        className="
-                                            absolute h-7
-                                            rounded
-                                            border-2 border-violet-400
-                                            bg-violet-500/20
-                                        "
+                                        className="absolute h-7 rounded border-2 border-violet-400 bg-violet-500/20"
                                         style={{
                                             left: `${
                                                 boxStatistics.max === boxStatistics.min
@@ -1889,10 +1925,7 @@ const Charts = () => {
                                     {/* MEDIAN */}
 
                                     <div
-                                        className="
-                                            absolute h-10
-                                            w-0.5 bg-cyan-400
-                                        "
+                                        className="absolute h-10 w-0.5 bg-cyan-400"
                                         style={{
                                             left: `${
                                                 boxStatistics.max === boxStatistics.min
@@ -1905,87 +1938,29 @@ const Charts = () => {
                                         }}
                                     />
 
-                                    {/* MINIMUM */}
+                                    <div className="absolute left-0 h-4 w-0.5 bg-gray-300" />
 
-                                    <div
-                                        className="
-                                            absolute left-0
-                                            h-4 w-0.5 bg-gray-300
-                                        "
-                                    />
-
-                                    {/* MAXIMUM */}
-
-                                    <div
-                                        className="
-                                            absolute right-0
-                                            h-4 w-0.5 bg-gray-300
-                                        "
-                                    />
-
+                                    <div className="absolute right-0 h-4 w-0.5 bg-gray-300" />
                                 </div>
 
-                                {/* LEGEND */}
-
-                                <div
-                                    className="
-                                        mt-4 flex flex-wrap
-                                        gap-5 text-xs text-gray-400
-                                    "
-                                >
-
+                                <div className="mt-4 flex flex-wrap gap-5 text-xs text-gray-400">
                                     <span className="flex items-center gap-2">
-
-                                        <span
-                                            className="
-                                                h-3 w-3
-                                                border border-violet-400
-                                                bg-violet-500/40
-                                            "
-                                        />
-
+                                        <span className="h-3 w-3 border border-violet-400 bg-violet-500/40" />
                                         Interquartile range
-
                                     </span>
 
                                     <span className="flex items-center gap-2">
-
-                                        <span
-                                            className="
-                                                h-4 w-1
-                                                bg-cyan-400
-                                            "
-                                        />
-
+                                        <span className="h-4 w-1 bg-cyan-400" />
                                         Median
-
                                     </span>
-
                                 </div>
-
                             </div>
-
                         </div>
 
-                        {/* IQR + OUTLIER CARDS */}
+                        {/* IQR AND OUTLIER CARDS */}
 
-                        <div
-                            className="
-                                mt-5 grid grid-cols-1
-                                gap-4 md:grid-cols-2
-                            "
-                        >
-
-                            <div
-                                className="
-                                    rounded-xl
-                                    border border-[#252525]
-                                    bg-[#0b0b0b15]
-                                    p-5 transition
-                                    hover:border-gray-600
-                                "
-                            >
-
+                        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div className="rounded-xl border border-[#252525] bg-[#0b0b0b15] p-5 transition hover:border-gray-600">
                                 <p className="text-sm text-gray-400">
                                     Interquartile Range (IQR)
                                 </p>
@@ -1993,19 +1968,9 @@ const Charts = () => {
                                 <p className="mt-2 text-2xl font-bold text-violet-400">
                                     {boxStatistics.iqr.toFixed(3)}
                                 </p>
-
                             </div>
 
-                            <div
-                                className="
-                                    rounded-xl
-                                    border border-[#252525]
-                                    bg-[#0b0b0b15]
-                                    p-5 transition
-                                    hover:border-gray-600
-                                "
-                            >
-
+                            <div className="rounded-xl border border-[#252525] bg-[#0b0b0b15] p-5 transition hover:border-gray-600">
                                 <p className="text-sm text-gray-400">
                                     Potential Outlier Count
                                 </p>
@@ -2013,9 +1978,7 @@ const Charts = () => {
                                 <p className="mt-2 text-2xl font-bold text-orange-400">
                                     {boxStatistics.outlierCount}
                                 </p>
-
                             </div>
-
                         </div>
 
                         <p className="mt-4 text-xs text-gray-500">
@@ -2024,15 +1987,10 @@ const Charts = () => {
                             potential unusual values, not
                             necessarily errors.
                         </p>
-
                     </>
-
                 ) : (
-                    <EmptyChart
-                        message="No numerical data available for box plot analysis."
-                    />
+                    <EmptyChart message="No numerical data available for box plot analysis." />
                 )}
-
             </ChartCard>
 
             {/* CATEGORICAL FREQUENCY */}
@@ -2041,29 +1999,22 @@ const Charts = () => {
                 title="Categorical Frequency Analysis"
                 description="Explore the ten most frequent values in a categorical column."
             >
-
                 {categoricalColumns.length > 0 ? (
-
                     <>
-
                         <div className="mb-5">
-
                             <SelectField
                                 label="Select Categorical Column"
                                 value={categoryColumn}
                                 onChange={setCategoryColumn}
                                 options={categoricalColumns}
                             />
-
                         </div>
 
                         {categoryData.length > 0 ? (
-
                             <ResponsiveContainer
                                 width="100%"
                                 height={350}
                             >
-
                                 <BarChart
                                     data={categoryData}
                                     margin={{
@@ -2073,7 +2024,6 @@ const Charts = () => {
                                         bottom: 10
                                     }}
                                 >
-
                                     <CartesianGrid {...GRID_STYLE} />
 
                                     <XAxis
@@ -2101,25 +2051,15 @@ const Charts = () => {
                                         fill="#10b981"
                                         radius={[5, 5, 0, 0]}
                                     />
-
                                 </BarChart>
-
                             </ResponsiveContainer>
-
                         ) : (
-                            <EmptyChart
-                                message="No category values available."
-                            />
+                            <EmptyChart message="No category values available." />
                         )}
-
                     </>
-
                 ) : (
-                    <EmptyChart
-                        message="No categorical columns detected."
-                    />
+                    <EmptyChart message="No categorical columns detected." />
                 )}
-
             </ChartCard>
 
             {/* CORRELATION HEATMAP */}
@@ -2128,136 +2068,72 @@ const Charts = () => {
                 title="Correlation Heatmap"
                 description="Explore positive and negative relationships between numerical columns."
             >
-
                 {numericColumns.length > 0 ? (
-
                     <div className="overflow-x-auto">
-
                         <table className="min-w-max w-full text-sm text-center border-collapse">
-
                             <thead>
-
                                 <tr className="bg-[#141414]">
-
-                                    <th
-                                        className="
-                                            border border-[#292929]
-                                            p-4 text-left
-                                            text-xs font-semibold
-                                            uppercase tracking-wider
-                                            text-gray-400
-                                        "
-                                    >
+                                    <th className="border border-[#292929] p-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
                                         Column
                                     </th>
 
-                                    {numericColumns.map(
-                                        (column) => (
-                                            <th
-                                                key={column}
-                                                className="
-                                                    border border-[#292929]
-                                                    p-4
-                                                    text-xs font-semibold
-                                                    uppercase tracking-wider
-                                                    text-gray-400
-                                                "
-                                            >
-                                                {column}
-                                            </th>
-                                        )
-                                    )}
-
+                                    {numericColumns.map((column) => (
+                                        <th
+                                            key={column}
+                                            className="border border-[#292929] p-4 text-xs font-semibold uppercase tracking-wider text-gray-400"
+                                        >
+                                            {column}
+                                        </th>
+                                    ))}
                                 </tr>
-
                             </thead>
 
                             <tbody>
+                                {correlationData.map((row) => (
+                                    <tr key={row.column}>
+                                        <th className="border border-[#292929] bg-[#111111] p-4 text-left font-medium text-gray-300">
+                                            {row.column}
+                                        </th>
 
-                                {correlationData.map(
-                                    (row) => (
+                                        {row.values.map(
+                                            (value, index) => {
+                                                const intensity =
+                                                    value === null
+                                                        ? 0
+                                                        : Math.abs(value);
 
-                                        <tr key={row.column}>
+                                                const background =
+                                                    value === null
+                                                        ? "#292929"
+                                                        : value >= 0
+                                                            ? `rgba(16, 185, 129, ${0.15 + intensity * 0.75})`
+                                                            : `rgba(239, 68, 68, ${0.15 + intensity * 0.75})`;
 
-                                            <th
-                                                className="
-                                                    border border-[#292929]
-                                                    bg-[#111111]
-                                                    p-4 text-left
-                                                    font-medium
-                                                    text-gray-300
-                                                "
-                                            >
-                                                {row.column}
-                                            </th>
-
-                                            {row.values.map(
-                                                (value, index) => {
-
-                                                    const intensity =
-                                                        value === null
-                                                            ? 0
-                                                            : Math.abs(value);
-
-                                                    const background =
-                                                        value === null
-                                                            ? "#292929"
-                                                            : value >= 0
-                                                                ? `rgba(16, 185, 129, ${0.15 + intensity * 0.75})`
-                                                                : `rgba(239, 68, 68, ${0.15 + intensity * 0.75})`;
-
-                                                    return (
-
-                                                        <td
-                                                            key={`${row.column}-${numericColumns[index]}`}
-                                                            className="
-                                                                border border-[#292929]
-                                                                p-4 font-semibold
-                                                                text-white
-                                                            "
-                                                            style={{
-                                                                backgroundColor:
-                                                                    background
-                                                            }}
-                                                        >
-
-                                                            {value === null
-                                                                ? "N/A"
-                                                                : value.toFixed(2)}
-
-                                                        </td>
-
-                                                    );
-
-                                                }
-                                            )}
-
-                                        </tr>
-
-                                    )
-                                )}
-
+                                                return (
+                                                    <td
+                                                        key={`${row.column}-${numericColumns[index]}`}
+                                                        className="border border-[#292929] p-4 font-semibold text-white"
+                                                        style={{
+                                                            backgroundColor: background
+                                                        }}
+                                                    >
+                                                        {value === null
+                                                            ? "N/A"
+                                                            : value.toFixed(2)}
+                                                    </td>
+                                                );
+                                            }
+                                        )}
+                                    </tr>
+                                ))}
                             </tbody>
-
                         </table>
-
                     </div>
-
                 ) : (
-                    <EmptyChart
-                        message="No numerical columns available for correlation analysis."
-                    />
+                    <EmptyChart message="No numerical columns available for correlation analysis." />
                 )}
 
-                {/* CORRELATION LEGEND */}
-
-                <div
-                    className="
-                        flex flex-wrap gap-5
-                        mt-6 text-xs text-gray-400
-                    "
-                >
-
+                <div className="flex flex-wrap gap-5 mt-6 text-xs text-gray-400">
                     <span className="flex items-center gap-2">
                         <span className="h-3 w-3 rounded bg-emerald-500" />
                         Positive correlation
@@ -2272,150 +2148,99 @@ const Charts = () => {
                         <span className="h-3 w-3 rounded bg-gray-600" />
                         Not available
                     </span>
-
                 </div>
-
             </ChartCard>
 
-           
             {/* DATASET QUALITY INFORMATION */}
 
             <ChartCard
                 title="Dataset Quality Information"
-                description="Review the overall quality of your uploaded dataset."
+                description="Review the overall quality of your dataset."
             >
-
-                <div
-                    className="
-                        grid grid-cols-1
-                        gap-5 md:grid-cols-2
-                    "
-                >
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
 
                     {/* MISSING VALUES */}
 
-                    <div
-                        className="
-                            rounded-xl
-                            border border-[#252525]
-                            bg-[#0b0b0b15]
-                            backdrop-blur-lg
-                            p-5
-                            transition
-                            hover:border-gray-600
-                        "
-                    >
-
+                    <div className="rounded-xl border border-[#252525] bg-[#0b0b0b15] backdrop-blur-lg p-5 transition hover:border-gray-600">
                         <div className="flex justify-between items-center">
-
                             <p className="text-sm text-gray-400">
                                 Missing Values Percentage
                             </p>
 
                             <Activity className="text-red-400" />
-
                         </div>
 
                         <h2 className="mt-4 text-3xl font-bold text-red-400">
                             {missingPercentage}%
                         </h2>
 
-                        {/* PROGRESS BAR */}
-
                         <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
-
                             <div
                                 className="h-2 rounded-full bg-red-500 transition-all"
                                 style={{
                                     width: `${Math.min(
                                         100,
-                                        Math.max(
-                                            0,
-                                            missingPercentage
-                                        )
+                                        Math.max(0, missingPercentage)
                                     )}%`
                                 }}
                             />
-
                         </div>
-
                     </div>
 
                     {/* DUPLICATES */}
 
-                    <div
-                        className="
-                            rounded-xl
-                            border border-[#252525]
-                            bg-[#0b0b0b15]
-                            backdrop-blur-lg
-                            p-5
-                            transition
-                            hover:border-gray-600
-                        "
-                    >
-
+                    <div className="rounded-xl border border-[#252525] bg-[#0b0b0b15] backdrop-blur-lg p-5 transition hover:border-gray-600">
                         <div className="flex justify-between items-center">
-
                             <p className="text-sm text-gray-400">
                                 Duplicate Rows Percentage
                             </p>
 
                             <RefreshCw className="text-orange-400" />
-
                         </div>
 
                         <h2 className="mt-4 text-3xl font-bold text-orange-400">
                             {duplicatePercentage}%
                         </h2>
 
-                        {/* PROGRESS BAR */}
-
                         <div className="mt-4 h-2 w-full rounded-full bg-[#292929]">
-
                             <div
                                 className="h-2 rounded-full bg-orange-500 transition-all"
                                 style={{
                                     width: `${Math.min(
                                         100,
-                                        Math.max(
-                                            0,
-                                            duplicatePercentage
-                                        )
+                                        Math.max(0, duplicatePercentage)
                                     )}%`
                                 }}
                             />
-
                         </div>
-
                     </div>
 
                 </div>
-
             </ChartCard>
 
             {/* FOOTER */}
 
             <div className="border-t border-[#252525] pt-5">
+                <button
+                    type="button"
+                    data-export-ignore="true"
+                    onClick={downloadAllCharts}
+                    className="
+                        flex items-center gap-3
+                        rounded-xl
+                        bg-indigo-600 hover:bg-indigo-700
+                        px-5 py-3
+                        text-white font-semibold
+                        shadow-lg transition-all duration-300
+                    "
+                >
+                    <Download size={20} />
+                    Download All Charts
+                </button>
 
-                <div className="mt-5">
-    <button
-        onClick={downloadAllCharts}
-        className="flex items-center gap-3 rounded-xl
-        bg-indigo-600 hover:bg-indigo-700
-        px-5 py-3 text-white font-semibold
-        shadow-lg transition-all duration-300"
-    >
-        <Download size={20} />
-
-        Download All Charts
-    </button>
-</div>
-
-                <p className="text-center text-xs text-gray-500">
+                <p className="mt-5 text-center text-xs text-gray-500">
                     AnalyzerX | Dataset Visualization Dashboard
                 </p>
-
             </div>
 
         </div>

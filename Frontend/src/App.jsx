@@ -15,6 +15,7 @@ import Charts from './Components/charts'
 import LandingPage from './Pages/LandingPage'
 import Layout from './Components/Layout'
 import CleaningPage from './Components/CleaningPage'
+import ReportPage from './Components/ReportPage'
 
 // Shared layout for all workspace pages
 const WorkspaceLayout = () => {
@@ -55,7 +56,7 @@ const App = () => {
           />
           <Route
             path="/Report"
-            element={<PlaceholderPage title="Report" />}
+            element={<ReportPage/>}
           />
           <Route
             path="/Data"
