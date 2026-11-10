@@ -1,11 +1,23 @@
-import React from 'react'
+import { useAuth } from '../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 const LoginPage = () => {
-  return (
-    <div>
-      
-    </div>
-  )
+
+    const { login } = useAuth()
+    const navigate = useNavigate()
+
+    const handleLogin = () => {
+        login()
+        navigate('/dashboard')
+    }
+
+    return (
+
+        <button onClick={handleLogin}>
+            Login
+        </button>
+
+    )
 }
 
 export default LoginPage
